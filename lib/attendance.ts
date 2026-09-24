@@ -24,6 +24,7 @@ export type TeacherEventAttendance = {
   attendeeCount: number;
   attendees: {
     studentId: string;
+    studentName: string | null;
     scannedAt: string;
   }[];
 };
@@ -139,28 +140,73 @@ export async function getTeacherEventAttendance(
 
   if (eventError || !events) return [];
 
-  const eventIds = events.map((e: any) => e.id);
-  if (eventIds.length === 0) return [];
+  const codes = Array.from(
+    new Set(events.map((e: any) => e.event_code))
+  ).filter(Boolean) as string[];
+  if (codes.length === 0) return [];
+
+  const { data: codeEvents, error: codeError } = await supabase
+    .from('events')
+    .select('id, event_code')
+    .in('event_code', codes);
+
+  if (codeError || !codeEvents) return [];
+
+  const allEventIds = Array.from(
+    new Set(codeEvents.map((e: any) => e.id))
+  ) as string[];
+  const codeToEventIds = new Map<string, string[]>();
+  for (const e of codeEvents as any[]) {
+    const prev = codeToEventIds.get(e.event_code) ?? [];
+    prev.push(e.id);
+    codeToEventIds.set(e.event_code, prev);
+  }
 
   const { data: attendance, error: attError } = await supabase
     .from('attendance')
     .select('student_id, scanned_at, event_id')
-    .in('event_id', eventIds)
+    .in('event_id', allEventIds)
     .order('scanned_at', { ascending: false });
 
   if (attError || !attendance) return [];
 
+  const studentIds = Array.from(
+    new Set(attendance.map((a: any) => a.student_id))
+  ) as string[];
+  const nameById = new Map<string, string | null>();
+  if (studentIds.length > 0) {
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', studentIds);
+    if (!profilesError && profiles) {
+      for (const p of profiles as any[]) {
+        nameById.set(p.id, p.full_name ?? null);
+      }
+    }
+  }
+
   return events.map((e: any) => {
-    const rows = attendance.filter((a: any) => a.event_id === e.id);
+    const matchIds = new Set(codeToEventIds.get(e.event_code) ?? [e.id]);
+    const rows = attendance.filter((a: any) => matchIds.has(a.event_id));
+
+    const seen = new Set<string>();
+    const uniqueRows = rows.filter((a: any) => {
+      if (seen.has(a.student_id)) return false;
+      seen.add(a.student_id);
+      return true;
+    });
+
     return {
       eventId: e.id,
       eventCode: e.event_code,
       title: e.title,
       startTime: e.start_time,
       endTime: e.end_time,
-      attendeeCount: rows.length,
-      attendees: rows.map((a: any) => ({
+      attendeeCount: seen.size,
+      attendees: uniqueRows.map((a: any) => ({
         studentId: a.student_id,
+        studentName: nameById.get(a.student_id) ?? null,
         scannedAt: a.scanned_at,
       })),
     };
@@ -170,11 +216,60 @@ export async function getTeacherEventAttendance(
 export async function getTeacherEventSummary(
   teacherId: string
 ): Promise<TeacherEventSummary[]> {
-  const events = await getTeacherEventAttendance(teacherId);
-  return events.map((e) => ({
-    eventId: e.eventId,
-    eventCode: e.eventCode,
-    title: e.title,
-    attendeeCount: e.attendeeCount,
-  }));
+  const { data: events, error: eventError } = await supabase
+    .from('events')
+    .select('id, event_code, title')
+    .eq('created_by', teacherId)
+    .order('created_at', { ascending: false });
+
+  if (eventError || !events) return [];
+
+  const codes = Array.from(
+    new Set(events.map((e: any) => e.event_code))
+  ).filter(Boolean) as string[];
+  if (codes.length === 0) return [];
+
+  const { data: codeEvents, error: codeError } = await supabase
+    .from('events')
+    .select('id, event_code')
+    .in('event_code', codes);
+
+  if (codeError || !codeEvents) return [];
+
+  const allEventIds = Array.from(
+    new Set(codeEvents.map((e: any) => e.id))
+  ) as string[];
+
+  const { data: attRows, error: attError } = await supabase
+    .from('attendance')
+    .select('event_id')
+    .in('event_id', allEventIds);
+
+  if (attError || !attRows) return [];
+
+  const counts: Record<string, number> = {};
+  for (const row of attRows as any[]) {
+    counts[row.event_id] = (counts[row.event_id] ?? 0) + 1;
+  }
+
+  const codeToEventIds = new Map<string, string[]>();
+  for (const e of codeEvents as any[]) {
+    const prev = codeToEventIds.get(e.event_code) ?? [];
+    prev.push(e.id);
+    codeToEventIds.set(e.event_code, prev);
+  }
+
+  return events.map((e: any) => {
+    const ids = codeToEventIds.get(e.event_code) ?? [e.id];
+    const attendeeCount = ids.reduce(
+      (sum, id) => sum + (counts[id] ?? 0),
+      0
+    );
+    return {
+      eventId: e.id,
+      eventCode: e.event_code,
+      title: e.title,
+      attendeeCount,
+    };
+  });
 }

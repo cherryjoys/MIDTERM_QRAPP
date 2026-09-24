@@ -1,6 +1,14 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { COLORS } from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
@@ -19,6 +27,7 @@ export default function HistoryScreen() {
     []
   );
   const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) {
@@ -75,46 +84,70 @@ export default function HistoryScreen() {
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
           >
-            {teacherEvents.map((item) => (
-              <View key={item.eventId} style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.eventTitle}>{item.title}</Text>
-                  <View style={styles.countBadge}>
-                    <Text style={styles.countBadgeText}>
-                      {item.attendeeCount}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.eventMeta}>{item.eventCode}</Text>
-                {item.startTime && (
-                  <Text style={styles.eventMeta}>
-                    {formatDate(item.startTime)}
-                  </Text>
-                )}
-
-                <View style={styles.separator} />
-
-                {item.attendees.length === 0 ? (
-                  <Text style={styles.eventMeta}>
-                    No attendance recorded yet.
-                  </Text>
-                ) : (
-                  item.attendees.map((attendee) => (
-                    <View
-                      key={attendee.studentId}
-                      style={styles.attendeeRow}
-                    >
-                      <Text style={styles.attendeeText}>
-                        {shortId(attendee.studentId)}
-                      </Text>
-                      <Text style={styles.attendeeMeta}>
-                        {formatDate(attendee.scannedAt)}
+            {teacherEvents.map((item) => {
+              const isExpanded = expandedId === item.eventId;
+              return (
+                <View key={item.eventId} style={styles.card}>
+                  <Pressable
+                    style={styles.cardHeader}
+                    onPress={() =>
+                      setExpandedId(isExpanded ? null : item.eventId)
+                    }
+                  >
+                    <Text style={styles.eventTitle}>{item.title}</Text>
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countBadgeText}>
+                        {item.attendeeCount}
                       </Text>
                     </View>
-                  ))
-                )}
-              </View>
-            ))}
+                    <Ionicons
+                      name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={18}
+                      color={COLORS.textSecondary}
+                      style={styles.chevron}
+                    />
+                  </Pressable>
+                  <Text style={styles.eventMeta}>{item.eventCode}</Text>
+                  {item.startTime && (
+                    <Text style={styles.eventMeta}>
+                      {formatDate(item.startTime)}
+                    </Text>
+                  )}
+
+                  {!isExpanded && item.attendees.length > 0 && (
+                    <Text style={styles.expandHint}>
+                      Tap to see the full attendee list
+                    </Text>
+                  )}
+
+                  {isExpanded && (
+                    <>
+                      <View style={styles.separator} />
+                      {item.attendees.length === 0 ? (
+                        <Text style={styles.eventMeta}>
+                          No attendance recorded yet.
+                        </Text>
+                      ) : (
+                        item.attendees.map((attendee) => (
+                          <View
+                            key={attendee.studentId}
+                            style={styles.attendeeRow}
+                          >
+                            <Text style={styles.attendeeText}>
+                              {attendee.studentName ||
+                                shortId(attendee.studentId)}
+                            </Text>
+                            <Text style={styles.attendeeMeta}>
+                              {formatDate(attendee.scannedAt)}
+                            </Text>
+                          </View>
+                        ))
+                      )}
+                    </>
+                  )}
+                </View>
+              );
+            })}
           </ScrollView>
         )}
       </View>
@@ -214,6 +247,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  chevron: {
+    marginLeft: 8,
+  },
+  expandHint: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 6,
   },
   eventMeta: {
     fontSize: 13,

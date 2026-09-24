@@ -131,7 +131,9 @@ create policy "Students can insert their own attendance"
   on public.attendance for insert
   with check (auth.uid() = student_id);
 
--- Teachers can view attendance for events they created
+-- Teachers can view attendance for events they created, plus any event
+-- row that shares the same event_code (covers QRs whose events were
+-- auto-created during a scan before the teacher saved the event).
 drop policy if exists "Teachers can view attendance for their events" on public.attendance;
 create policy "Teachers can view attendance for their events"
   on public.attendance for select
@@ -139,13 +141,18 @@ create policy "Teachers can view attendance for their events"
     exists (
       select 1 from public.events e
       where e.id = attendance.event_id
-        and e.created_by = auth.uid()
+        and exists (
+          select 1 from public.events own
+          where own.event_code = e.event_code
+            and own.created_by = auth.uid()
+        )
     )
   );
 
 -- Teachers can read the profiles of students who attended their events
 -- (needed to show attendee names in the teacher's History view).
--- Placed last so public.attendance already exists when the policy is validated.
+-- Mirrors the attendance policy: matches any event row sharing the teacher's
+-- event_code, so students of auto-created (orphan) event rows also show.
 drop policy if exists "Teachers can view profiles of their attendees" on public.profiles;
 create policy "Teachers can view profiles of their attendees"
   on public.profiles for select
@@ -155,7 +162,11 @@ create policy "Teachers can view profiles of their attendees"
       from public.attendance a
       join public.events e on e.id = a.event_id
       where a.student_id = profiles.id
-        and e.created_by = auth.uid()
+        and exists (
+          select 1 from public.events own
+          where own.event_code = e.event_code
+            and own.created_by = auth.uid()
+        )
     )
   );
 
