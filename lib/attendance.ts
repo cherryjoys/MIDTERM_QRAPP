@@ -33,6 +33,7 @@ export type TeacherEventSummary = {
   eventId: string;
   eventCode: string;
   title: string;
+  startTime: string | null;
   attendeeCount: number;
 };
 
@@ -218,7 +219,7 @@ export async function getTeacherEventSummary(
 ): Promise<TeacherEventSummary[]> {
   const { data: events, error: eventError } = await supabase
     .from('events')
-    .select('id, event_code, title')
+    .select('id, event_code, title, start_time')
     .eq('created_by', teacherId)
     .order('created_at', { ascending: false });
 
@@ -269,6 +270,7 @@ export async function getTeacherEventSummary(
       eventId: e.id,
       eventCode: e.event_code,
       title: e.title,
+      startTime: e.start_time,
       attendeeCount,
     };
   });

@@ -16,18 +16,22 @@ import { getAttendanceHistory, type AttendanceRecord } from '@/lib/attendance';
 import { getProfile } from '@/lib/profiles';
 import {
   getTeacherEventAttendance,
+  getTeacherEventSummary,
   type TeacherEventAttendance,
+  type TeacherEventSummary,
 } from '@/lib/attendance';
 
 export default function HistoryScreen() {
   const { user } = useAuth();
   const [role, setRole] = useState<'student' | 'teacher' | null>(null);
   const [studentRecords, setStudentRecords] = useState<AttendanceRecord[]>([]);
-  const [teacherEvents, setTeacherEvents] = useState<TeacherEventAttendance[]>(
+  const [teacherSummary, setTeacherSummary] = useState<TeacherEventSummary[]>(
     []
   );
+  const [expandedDetail, setExpandedDetail] =
+    useState<TeacherEventAttendance | null>(null);
+  const [expanding, setExpanding] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) {
@@ -40,13 +44,15 @@ export default function HistoryScreen() {
     setRole(currentRole);
 
     if (currentRole === 'teacher') {
-      const events = await getTeacherEventAttendance(user.id);
-      setTeacherEvents(events);
+      const summary = await getTeacherEventSummary(user.id);
+      setTeacherSummary(summary);
+      setExpandedDetail(null);
       setStudentRecords([]);
     } else {
       const records = await getAttendanceHistory(user.id);
       setStudentRecords(records);
-      setTeacherEvents([]);
+      setTeacherSummary([]);
+      setExpandedDetail(null);
     }
 
     setLoading(false);
@@ -58,6 +64,19 @@ export default function HistoryScreen() {
       load();
     }, [load])
   );
+
+  const handleExpand = async (eventId: string) => {
+    if (expandedDetail?.eventId === eventId) {
+      setExpandedDetail(null);
+      return;
+    }
+    setExpanding(true);
+    setExpandedDetail(null);
+    const events = await getTeacherEventAttendance(user?.id ?? '');
+    const detail = events.find((e) => e.eventId === eventId) ?? null;
+    setExpandedDetail(detail);
+    setExpanding(false);
+  };
 
   if (loading) {
     return (
@@ -74,7 +93,7 @@ export default function HistoryScreen() {
         <Text style={styles.title}>Attendance History</Text>
         <Text style={styles.subtitle}>Events you created and who attended</Text>
 
-        {teacherEvents.length === 0 ? (
+        {teacherSummary.length === 0 ? (
           <Text style={styles.subtitle}>
             No events yet. Create one in the Teacher tab to start tracking
             attendance.
@@ -84,15 +103,13 @@ export default function HistoryScreen() {
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
           >
-            {teacherEvents.map((item) => {
-              const isExpanded = expandedId === item.eventId;
+            {teacherSummary.map((item) => {
+              const isExpanded = expandedDetail?.eventId === item.eventId;
               return (
                 <View key={item.eventId} style={styles.card}>
                   <Pressable
                     style={styles.cardHeader}
-                    onPress={() =>
-                      setExpandedId(isExpanded ? null : item.eventId)
-                    }
+                    onPress={() => handleExpand(item.eventId)}
                   >
                     <Text style={styles.eventTitle}>{item.title}</Text>
                     <View style={styles.countBadge}>
@@ -114,7 +131,7 @@ export default function HistoryScreen() {
                     </Text>
                   )}
 
-                  {!isExpanded && item.attendees.length > 0 && (
+                  {!isExpanded && item.attendeeCount > 0 && (
                     <Text style={styles.expandHint}>
                       Tap to see the full attendee list
                     </Text>
@@ -123,12 +140,16 @@ export default function HistoryScreen() {
                   {isExpanded && (
                     <>
                       <View style={styles.separator} />
-                      {item.attendees.length === 0 ? (
+                      {expanding ? (
+                        <Text style={styles.eventMeta}>Loading attendees...</Text>
+                      ) : expandedDetail &&
+                        expandedDetail.attendees.length === 0 ? (
                         <Text style={styles.eventMeta}>
                           No attendance recorded yet.
                         </Text>
                       ) : (
-                        item.attendees.map((attendee) => (
+                        expandedDetail &&
+                        expandedDetail.attendees.map((attendee) => (
                           <View
                             key={attendee.studentId}
                             style={styles.attendeeRow}

@@ -114,10 +114,15 @@ create policy "Users can insert events"
   on public.events for insert
   with check (auth.role() = 'authenticated');
 
+-- Only the creator can insert / update their events.
+-- A teacher may ALSO adopt an unclaimed (orphan) event row — one that was
+-- auto-created during a scan before the teacher saved the event — so the
+-- upsert (onConflict: event_code) can set created_by on that same row.
 drop policy if exists "Users can update their own events" on public.events;
 create policy "Users can update their own events"
   on public.events for update
-  using (auth.uid() = created_by);
+  using (auth.uid() = created_by or created_by is null)
+  with check (auth.uid() = created_by or created_by is null);
 
 -- Attendance policies
 -- Students can only view / insert their own attendance
