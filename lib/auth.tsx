@@ -55,8 +55,23 @@ export function useAuth(): AuthState {
   return useContext(AuthContext);
 }
 
-export async function signUp(email: string, password: string) {
+export type SignUpProfile = {
+  full_name: string;
+  role: 'student' | 'teacher';
+};
+
+export async function signUp(
+  email: string,
+  password: string,
+  profile?: SignUpProfile
+) {
   const { data, error } = await supabase.auth.signUp({ email, password });
+  if (!error && data.session && profile) {
+    await supabase
+      .from('profiles')
+      .update({ full_name: profile.full_name, role: profile.role })
+      .eq('id', data.session.user.id);
+  }
   return { data, error };
 }
 
