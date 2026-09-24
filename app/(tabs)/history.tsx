@@ -13,17 +13,17 @@ import {
 import { COLORS } from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 import { getAttendanceHistory, type AttendanceRecord } from '@/lib/attendance';
-import { getProfile } from '@/lib/profiles';
 import {
   getTeacherEventAttendance,
   getTeacherEventSummary,
   type TeacherEventAttendance,
   type TeacherEventSummary,
 } from '@/lib/attendance';
+import { useRole } from '@/lib/useRole';
 
 export default function HistoryScreen() {
   const { user } = useAuth();
-  const [role, setRole] = useState<'student' | 'teacher' | null>(null);
+  const { role } = useRole();
   const [studentRecords, setStudentRecords] = useState<AttendanceRecord[]>([]);
   const [teacherSummary, setTeacherSummary] = useState<TeacherEventSummary[]>(
     []
@@ -39,16 +39,12 @@ export default function HistoryScreen() {
       return;
     }
 
-    const profile = await getProfile(user.id);
-    const currentRole = profile?.role ?? 'student';
-    setRole(currentRole);
-
-    if (currentRole === 'teacher') {
+    if (role === 'teacher') {
       const summary = await getTeacherEventSummary(user.id);
       setTeacherSummary(summary);
       setExpandedDetail(null);
       setStudentRecords([]);
-    } else {
+    } else if (role === 'student') {
       const records = await getAttendanceHistory(user.id);
       setStudentRecords(records);
       setTeacherSummary([]);
@@ -56,7 +52,7 @@ export default function HistoryScreen() {
     }
 
     setLoading(false);
-  }, [user]);
+  }, [user, role]);
 
   useFocusEffect(
     useCallback(() => {

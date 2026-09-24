@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -6,14 +7,36 @@ import AppButton from '@/components/AppButton';
 import { COLORS } from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 import { registerAttendance } from '@/lib/attendance';
+import { useRole } from '@/lib/useRole';
 
 export default function ScanScreen() {
   const { user } = useAuth();
+  const { role, loading: roleLoading } = useRole();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [lastData, setLastData] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  if (roleLoading) {
+    return <View style={styles.container} />;
+  }
+
+  if (role !== 'student') {
+    return (
+      <View style={styles.container}>
+        <Ionicons
+          name="lock-closed-outline"
+          size={48}
+          color={COLORS.textSecondary}
+        />
+        <Text style={styles.title}>Students Only</Text>
+        <Text style={styles.subtitle}>
+          Only student accounts can scan QR codes.
+        </Text>
+      </View>
+    );
+  }
 
   if (!permission) {
     return <View style={styles.container} />;
