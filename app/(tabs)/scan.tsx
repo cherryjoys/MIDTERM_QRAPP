@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '@/components/AppButton';
 import { COLORS } from '@/constants/colors';
@@ -10,168 +12,372 @@ import { registerAttendance } from '@/lib/attendance';
 import { useRole } from '@/lib/useRole';
 
 export default function ScanScreen() {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { role, loading: roleLoading } = useRole();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  const [lastData, setLastData] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [eventTitle, setEventTitle] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const scanLock = useRef(false);
+
+  const handleBarcodeScanned = ({ data }: { data: string }) => {
+    if (scanLock.current || !user) return;
+
+    scanLock.current = true;
+    setScanned(true);
+    setProcessing(true);
+    setMessage(null);
+    setEventTitle(null);
+    setSuccess(false);
+
+    void registerAttendance(data, user.id)
+      .then((result) => {
+        setMessage(result.message);
+        setEventTitle(result.eventTitle ?? null);
+        setSuccess(result.success);
+      })
+      .catch(() => {
+        setMessage('Please try again.');
+        setSuccess(false);
+      })
+      .finally(() => {
+        setProcessing(false);
+      });
+  };
+
+  const handleScanAgain = () => {
+    scanLock.current = false;
+    setScanned(false);
+    setProcessing(false);
+    setMessage(null);
+    setEventTitle(null);
+    setSuccess(false);
+  };
 
   if (roleLoading) {
-    return <View style={styles.container} />;
+    return <StatusScreen loading title="Checking your account" />;
   }
 
   if (role !== 'student') {
     return (
-      <View style={styles.container}>
-        <Ionicons
-          name="lock-closed-outline"
-          size={48}
-          color={COLORS.textSecondary}
-        />
-        <Text style={styles.title}>Students Only</Text>
-        <Text style={styles.subtitle}>
-          Only student accounts can scan QR codes.
-        </Text>
-      </View>
+      <StatusScreen
+        icon="lock-closed-outline"
+        title="Students only"
+      />
     );
   }
 
   if (!permission) {
-    return <View style={styles.container} />;
+    return <StatusScreen loading title="Preparing the scanner" />;
   }
 
   if (!permission.granted) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Camera Permission Needed</Text>
-        <Text style={styles.subtitle}>
-          We need access to your camera to scan QR codes.
-        </Text>
+      <StatusScreen
+        icon="camera-outline"
+         title="Camera access needed"
+         description="Allow camera access to scan."
+      >
         <AppButton
           theme="primary"
-          title="Grant Permission"
-          icon="camera"
-          onPress={requestPermission}
+          title="Allow camera"
+          icon="camera-outline"
+          onPress={() => void requestPermission()}
+          accessibilityHint="Allow camera access for QR scanning"
         />
-      </View>
+      </StatusScreen>
     );
   }
 
-const handleBarcodeScanned = ({ data }: { data: string }) => {
-    setScanned(true);
-    setLastData(data);
-    const studentId = user?.id ?? 'unknown';
-    registerAttendance(data, studentId).then((result) => {
-      setMessage(result.message);
-      setSuccess(result.success);
-    });
-  };
-
-  const handleScanAgain = () => {
-    setScanned(false);
-    setLastData(null);
-    setMessage(null);
-  };
-
   return (
-    <View style={styles.container}>
+    <View style={styles.scanner}>
+      <StatusBar style="light" />
       <CameraView
-        style={styles.camera}
+        style={StyleSheet.absoluteFillObject}
         facing="back"
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
       />
 
-      <View style={styles.overlay}>
-        <Text style={styles.overlayText}>
-          {scanned ? 'QR Code detected!' : 'Point your camera at a QR code'}
-        </Text>
-
-        {scanned && message && (
-          <Text
-            style={[styles.scanResult, success ? styles.success : styles.error]}
-          >
-            {message}
-          </Text>
-        )}
-
-        {scanned && lastData && (
-          <Text style={styles.scanData}>{lastData}</Text>
-        )}
-
-        {scanned && (
-          <AppButton
-            theme="primary"
-            title="Scan Again"
-            icon="refresh"
-            onPress={handleScanAgain}
-          />
-        )}
+      <View style={[styles.scannerTop, { paddingTop: insets.top + 12 }]} pointerEvents="none">
+        <View style={styles.topBar}>
+          <View style={styles.topCopy}>
+            <Text accessibilityRole="header" style={styles.topTitle}>Scan QR</Text>
+          </View>
+        </View>
       </View>
+
+      <View style={styles.guide} pointerEvents="none">
+        <View style={styles.scanFrame}>
+          <View style={[styles.corner, styles.cornerTopLeft]} />
+          <View style={[styles.corner, styles.cornerTopRight]} />
+          <View style={[styles.corner, styles.cornerBottomLeft]} />
+          <View style={[styles.corner, styles.cornerBottomRight]} />
+           <Ionicons name="scan-outline" size={35} color={COLORS.mint} />
+        </View>
+          <View style={styles.guideCopy}>
+            <Text accessibilityRole="header" style={styles.guideText}>Point at the event QR</Text>
+          </View>
+      </View>
+
+      {scanned ? (
+        <View style={styles.bottomPanel} pointerEvents="box-none">
+          <View
+            accessibilityRole="alert"
+            style={[
+              styles.resultCard,
+              processing
+                ? styles.resultProcessing
+                : success
+                  ? styles.resultSuccess
+                  : styles.resultError,
+            ]}
+          >
+            <View style={styles.resultIcon}>
+              <Ionicons
+                name={processing ? 'time-outline' : success ? 'checkmark-circle' : 'alert-circle'}
+                size={24}
+                color={
+                  processing ? COLORS.primary : success ? COLORS.success : COLORS.danger
+                }
+              />
+            </View>
+            <View style={styles.resultCopy}>
+              <Text style={styles.resultTitle}>
+                {processing
+                  ? 'Recording attendance'
+                  : eventTitle || (success ? 'Attendance recorded' : 'Could not record attendance')}
+              </Text>
+              <Text style={styles.resultMessage}>
+                {processing ? 'Please wait.' : message || 'Try another QR.'}
+              </Text>
+            </View>
+            <AppButton
+              theme="primary"
+              title="Scan again"
+              icon="refresh-outline"
+              onPress={handleScanAgain}
+              loading={processing}
+              disabled={processing}
+            />
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
 
+type StatusScreenProps = {
+  icon?: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description?: string;
+  loading?: boolean;
+  children?: ReactNode;
+};
+
+function StatusScreen({
+  icon,
+  title,
+  description,
+  loading = false,
+  children,
+}: StatusScreenProps) {
+  return (
+    <SafeAreaView style={styles.statusScreen} edges={['top', 'left', 'right', 'bottom']}>
+      <View style={styles.statusContent}>
+        <View style={styles.statusIcon}>
+          {loading ? (
+            <ActivityIndicator size="large" color={COLORS.primary} />
+          ) : (
+            <Ionicons name={icon ?? 'information-circle-outline'} size={38} color={COLORS.primary} />
+          )}
+        </View>
+        <Text style={styles.statusTitle}>{title}</Text>
+        {description ? <Text style={styles.statusDescription}>{description}</Text> : null}
+        {children}
+      </View>
+    </SafeAreaView>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
+  statusScreen: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  statusContent: {
+    flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 30,
+  },
+  statusIcon: {
+    width: 82,
+    height: 82,
+    borderRadius: 28,
+    backgroundColor: COLORS.mint,
     alignItems: 'center',
-    paddingHorizontal: 24,
+    justifyContent: 'center',
+    marginBottom: 20,
   },
-  camera: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
+  statusTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
     color: COLORS.textPrimary,
+    textAlign: 'center',
     marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+  statusDescription: {
+    maxWidth: 330,
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 16,
+    color: COLORS.textSecondary,
+    marginBottom: 24,
   },
-  overlay: {
+  scanner: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+  },
+  scannerTop: {
     position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 60,
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 16,
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    backgroundColor: COLORS.overlay,
+  },
+  topBar: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.overlay,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
   },
-  overlayText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-    textAlign: 'center',
+  topCopy: {
+    flex: 1,
   },
-  scanResult: {
+  topTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.textOnPrimary,
+  },
+  guide: {
+    position: 'absolute',
+    top: 120,
+    left: 0,
+    right: 0,
+    bottom: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanFrame: {
+    width: 250,
+    height: 250,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  corner: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    borderColor: COLORS.textOnPrimary,
+  },
+  cornerTopLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderTopLeftRadius: 28,
+  },
+  cornerTopRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderTopRightRadius: 28,
+  },
+  cornerBottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderBottomLeftRadius: 28,
+  },
+  cornerBottomRight: {
+    right: 0,
+    bottom: 0,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomRightRadius: 28,
+  },
+  guideCopy: {
+    backgroundColor: COLORS.overlay,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    marginTop: 18,
+  },
+  guideText: {
     fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textOnPrimary,
     textAlign: 'center',
-    marginBottom: 8,
-    fontWeight: '600',
   },
-  success: {
-    color: '#2E7D32',
+  bottomPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 20,
+    paddingTop: 17,
+    paddingBottom: 12,
   },
-  error: {
-    color: '#C62828',
+  resultCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
   },
-  scanData: {
-    fontSize: 12,
+  resultProcessing: {
+    borderColor: COLORS.primary,
+  },
+  resultSuccess: {
+    borderColor: COLORS.success,
+  },
+  resultError: {
+    borderColor: COLORS.danger,
+  },
+  resultIcon: {
+    alignSelf: 'center',
+    marginBottom: 7,
+  },
+  resultCopy: {
+    alignItems: 'center',
+    marginBottom: 13,
+  },
+  resultTitle: {
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+  },
+  resultMessage: {
+    fontSize: 13,
+    lineHeight: 18,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    marginBottom: 12,
+    marginTop: 4,
   },
 });
-

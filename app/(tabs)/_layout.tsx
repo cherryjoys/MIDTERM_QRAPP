@@ -1,33 +1,37 @@
-import { Tabs } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Tabs } from 'expo-router';
 import { StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS } from '@/constants/colors';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
+        headerShown: false,
         tabBarActiveTintColor: COLORS.primary,
-        headerStyle: { backgroundColor: COLORS.background },
-        headerShadowVisible: false,
-        headerTintColor: COLORS.textPrimary,
-        tabBarStyle: {
-          backgroundColor: COLORS.card,
-          borderTopColor: COLORS.border,
-          borderTopWidth: StyleSheet.hairlineWidth,
-        },
+        tabBarInactiveTintColor: COLORS.textSecondary,
+        tabBarLabelStyle: styles.tabLabel,
+        tabBarHideOnKeyboard: true,
+        tabBarStyle: [
+          styles.tabBar,
+          { height: 49 + insets.bottom, paddingBottom: insets.bottom },
+        ],
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
+          tabBarAccessibilityLabel: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'home-sharp' : 'home-outline'}
               color={color}
-              size={24}
+              size={23}
             />
           ),
         }}
@@ -36,6 +40,7 @@ export default function TabLayout() {
         name="scan"
         options={{
           title: 'Scan',
+          tabBarAccessibilityLabel: 'Scan attendance',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'qr-code' : 'qr-code-outline'}
@@ -49,11 +54,26 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'History',
+          tabBarAccessibilityLabel: 'Attendance history',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'time' : 'time-outline'}
               color={color}
-              size={24}
+              size={23}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="teacher"
+        options={{
+          title: 'Teacher',
+          tabBarAccessibilityLabel: 'Teacher tools',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'school' : 'school-outline'}
+              color={color}
+              size={23}
             />
           ),
         }}
@@ -62,25 +82,12 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
+          tabBarAccessibilityLabel: 'Profile',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'person' : 'person-outline'}
               color={color}
-              size={24}
-            />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="teacher"
-        options={{
-          title: 'Teacher',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? 'school' : 'school-outline'}
-              color={color}
-              size={24}
+              size={23}
             />
           ),
         }}
@@ -88,3 +95,16 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: COLORS.card,
+    borderTopColor: COLORS.lightSage,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+});

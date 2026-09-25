@@ -3,36 +3,92 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { COLORS } from '@/constants/colors';
 
-type Props = { title: string };
+type Props = {
+  title: string;
+  compact?: boolean;
+  centered?: boolean;
+};
 
-export default function Header({ title }: Props) {
+export default function Header({ title, compact = false, centered = false }: Props) {
   return (
-    <View style={styles.container}>
-      <View style={styles.logoCircle}>
-        <MaterialIcons name="school" size={36} color={COLORS.primary} />
+    <View
+      style={[
+        styles.container,
+        compact && styles.compactContainer,
+        centered && styles.centeredContainer,
+      ]}
+    >
+      <View
+        style={[
+          styles.logoCircle,
+          compact && styles.compactLogoCircle,
+          centered && styles.centeredLogoCircle,
+        ]}
+      >
+        <MaterialIcons
+          name="qr-code-scanner"
+          size={compact ? 25 : 32}
+          color={COLORS.mint}
+        />
       </View>
-      <Text style={styles.title}>{title}</Text>
+      <View style={[styles.copy, centered && styles.centeredCopy]}>
+        <Text
+          accessibilityRole="header"
+          style={[styles.title, compact && styles.compactTitle]}
+        >
+          {title}
+        </Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 22,
+  },
+  compactContainer: {
+    paddingVertical: 8,
+  },
+  centeredContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  centeredLogoCircle: {
+    marginRight: 0,
+    marginBottom: 14,
   },
   logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: COLORS.surface,
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginRight: 14,
+  },
+  compactLogoCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 17,
+    marginRight: 12,
+  },
+  copy: {
+    flex: 1,
+  },
+  centeredCopy: {
+    flex: 0,
+    alignItems: 'center',
   },
   title: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: '800',
     color: COLORS.textPrimary,
+    letterSpacing: -0.3,
+  },
+  compactTitle: {
+    fontSize: 21,
   },
 });

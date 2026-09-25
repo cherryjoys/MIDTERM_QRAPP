@@ -65,7 +65,11 @@ export async function signUp(
   password: string,
   profile?: SignUpProfile
 ) {
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: profile ? { data: profile } : undefined,
+  });
   if (!error && data.session && profile) {
     await supabase
       .from('profiles')

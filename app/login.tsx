@@ -1,18 +1,17 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-  TouchableWithoutFeedback,
-  Keyboard,
 } from 'react-native';
-import { Link, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
@@ -20,164 +19,218 @@ import { COLORS } from '@/constants/colors';
 import { signIn } from '@/lib/auth';
 
 export default function LoginScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    if (loading) return;
+
     setError(null);
     setLoading(true);
 
     try {
-      const { data, error: authError } = await signIn(email.trim(), password);
+      const { error: authError } = await signIn(email.trim(), password);
 
       if (authError) {
         setError(authError.message);
       } else {
         router.replace('/');
       }
-    } catch (err: any) {
-      setError(err?.message || 'Unexpected error');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        keyboardVerticalOffset={0}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.headerContainer}>
-              <Header title="QR Attendance" />
-            </View>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Header title="Welcome back" centered />
 
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to record your attendance</Text>
-
-            <View style={styles.form}>
-              <Text style={styles.label}>Email</Text>
+          <View style={styles.formCard}>
+            <Text style={styles.label}>Email</Text>
+            <View style={styles.inputShell}>
+              <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} />
               <TextInput
+                accessibilityLabel="Email address"
                 style={styles.input}
                 value={email}
                 onChangeText={setEmail}
-                placeholder="your.email@school.edu"
+                placeholder="you@example.com"
                 placeholderTextColor={COLORS.textSecondary}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                textContentType="emailAddress"
                 editable={!loading}
               />
+            </View>
 
-              <Text style={styles.label}>Password</Text>
+            <Text style={[styles.label, styles.passwordLabel]}>Password</Text>
+            <View style={styles.inputShell}>
+              <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} />
               <TextInput
+                accessibilityLabel="Password"
                 style={styles.input}
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Enter your password"
                 placeholderTextColor={COLORS.textSecondary}
-                secureTextEntry
+                secureTextEntry={!showPassword}
+                textContentType="password"
                 editable={!loading}
               />
-
-              {error && <Text style={styles.error}>{error}</Text>}
-
-              {loading ? (
-                <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
-              ) : (
-                <AppButton
-                  theme="primary"
-                  title="Sign In"
-                  icon="log-in-outline"
-                  onPress={handleLogin}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                hitSlop={10}
+                onPress={() => setShowPassword((current) => !current)}
+                style={styles.passwordToggle}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={COLORS.textSecondary}
                 />
-              )}
+              </Pressable>
             </View>
 
+            {error ? (
+              <View accessibilityRole="alert" style={styles.errorBanner}>
+                <Ionicons name="alert-circle-outline" size={19} color={COLORS.danger} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <AppButton
+              theme="primary"
+              title="Sign in"
+              icon="log-in-outline"
+              onPress={handleLogin}
+              loading={loading}
+              disabled={loading}
+              accessibilityHint="Sign in to your QR Attendance account"
+            />
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Need an account?</Text>
             <Link href="/register" style={styles.link}>
-              Don't have an account? Sign Up
+              Create an account
             </Link>
-          </ScrollView>
-        </TouchableWithoutFeedback>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
   keyboardView: {
     flex: 1,
   },
-  scrollContent: {
-    flexGrow: 1,
+  content: {
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingTop: 14,
+    paddingBottom: 36,
   },
-  headerContainer: {
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: COLORS.textSecondary,
-    lineHeight: 21,
-    marginBottom: 32,
-  },
-  form: {
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-    marginTop: 10,
-  },
-  input: {
+  formCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 10,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    padding: 20,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 8,
+  },
+  passwordLabel: {
+    marginTop: 18,
+  },
+  inputShell: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingLeft: 15,
+    paddingRight: 8,
+  },
+  input: {
+    flex: 1,
+    minHeight: 52,
+    paddingHorizontal: 12,
+    paddingVertical: 0,
     fontSize: 16,
     color: COLORS.textPrimary,
+    includeFontPadding: false,
   },
-  error: {
-    fontSize: 14,
+  passwordToggle: {
+    width: 44,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.dangerSoft,
+    borderRadius: 14,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    marginTop: 18,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
     color: COLORS.danger,
-    textAlign: 'left',
-    marginTop: 12,
-    marginBottom: 4,
+    marginLeft: 9,
   },
-  loader: {
-    marginVertical: 16,
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  footerText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
   link: {
     fontSize: 14,
+    fontWeight: '800',
     color: COLORS.primary,
-    textAlign: 'center',
-    fontWeight: '600',
+    marginLeft: 5,
   },
 });

@@ -4,6 +4,8 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -12,9 +14,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 
 import AppButton from '@/components/AppButton';
+import Header from '@/components/Header';
 import { COLORS } from '@/constants/colors';
 import { createEvent } from '@/lib/events';
 import { buildQRPayload } from '@/lib/qr';
@@ -55,12 +59,20 @@ export default function TeacherScreen() {
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [editingPart, setEditingPart] = useState<'date' | 'time'>('date');
   const [payload, setPayload] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const isAndroid = Platform.OS === 'android';
 
+  const clearFeedback = () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setPayload(null);
+  };
+
   const openPicker = (target: EditTarget) => {
-    setMessage(null);
+    clearFeedback();
     setEditTarget(target);
     setEditingPart('date');
   };
@@ -93,11 +105,13 @@ export default function TeacherScreen() {
   };
 
   const handleQuickEnd = (ms: number) => {
-    setMessage(null);
+    clearFeedback();
     setEndDate(new Date(startDate.getTime() + ms));
   };
 
-  const handleCreateEvent = () => {
+  const handleCreateEvent = async () => {
+    if (creating) return;
+
     const event = {
       eventId: eventId.trim(),
       title: title.trim(),
@@ -105,298 +119,453 @@ export default function TeacherScreen() {
       end: toLocalISO(endDate),
     };
 
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setPayload(null);
+
     if (!event.eventId || !event.title) {
-      setMessage('Event title and code are required.');
+      setErrorMessage('Event title and code are required.');
       return;
     }
 
     if (endDate.getTime() <= startDate.getTime()) {
-      setMessage('End time must be after start time.');
+      setErrorMessage('End time must be after start time.');
       return;
     }
 
-    createEvent(event).then(({ error }) => {
+    setCreating(true);
+
+    try {
+      const { error } = await createEvent(event);
       if (error) {
-        setMessage('Could not save the event. Please try again.');
+        setErrorMessage('Could not save event.');
         return;
       }
-      setMessage('Event saved! Scan the QR with the Scan tab to test it.');
+
+      setSuccessMessage('Event saved.');
       setPayload(buildQRPayload(event));
-    });
+    } catch {
+      setErrorMessage('Could not save the event. Please try again.');
+    } finally {
+      setCreating(false);
+    }
   };
 
   if (roleLoading) {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.lockedTitle}>Checking your account...</Text>
-      </View>
-    );
+    return <TeacherStatus loading title="Checking your account" />;
   }
 
   if (role !== 'teacher') {
     return (
-      <View style={[styles.container, styles.centerContent]}>
-        <Ionicons
-          name="lock-closed-outline"
-          size={48}
-          color={COLORS.textSecondary}
-        />
-        <Text style={styles.lockedTitle}>Teachers Only</Text>
-        <Text style={styles.lockedSubtitle}>
-          Only teacher accounts can create events.
-        </Text>
-      </View>
+      <TeacherStatus
+        icon="lock-closed-outline"
+        title="Teachers only"
+      />
     );
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={styles.title}>Create Event QR</Text>
-      <Text style={styles.subtitle}>
-        Fill in the event details, then scan the generated QR with the Scan tab.
-      </Text>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+        <Header title="New event" compact />
 
-      <Text style={styles.label}>Event Title</Text>
-      <TextInput
-        style={styles.input}
-        value={title}
-        onChangeText={setTitle}
-        placeholder="e.g. Founders Day Assembly"
-        placeholderTextColor={COLORS.textSecondary}
-      />
+        <View style={styles.formCard}>
+          <Text style={styles.label}>Event title</Text>
+          <View style={styles.inputShell}>
+            <Ionicons name="sparkles-outline" size={20} color={COLORS.textSecondary} />
+            <TextInput
+              accessibilityLabel="Event title"
+              style={styles.input}
+              value={title}
+              onChangeText={(value) => {
+                setTitle(value);
+                clearFeedback();
+              }}
+              placeholder="e.g. Founders' Day"
+              placeholderTextColor={COLORS.textSecondary}
+              editable={!creating}
+            />
+          </View>
 
-      <Text style={styles.label}>Event Code</Text>
-      <TextInput
-        style={styles.input}
-        value={eventId}
-        onChangeText={setEventId}
-        placeholder="e.g. EVT-2026-0002"
-        placeholderTextColor={COLORS.textSecondary}
-        autoCapitalize="characters"
-      />
+          <Text style={[styles.label, styles.spacedLabel]}>Event code</Text>
+          <View style={styles.inputShell}>
+            <Ionicons name="key-outline" size={20} color={COLORS.textSecondary} />
+            <TextInput
+              accessibilityLabel="Event code"
+              style={styles.input}
+              value={eventId}
+              onChangeText={(value) => {
+                setEventId(value);
+                clearFeedback();
+              }}
+              placeholder="e.g. EVT-2026-0002"
+              placeholderTextColor={COLORS.textSecondary}
+              autoCapitalize="characters"
+              editable={!creating}
+            />
+          </View>
 
-      <Text style={styles.label}>Starts</Text>
-      <PickerField
-        value={formatDateTime(startDate)}
-        icon="sunny-outline"
-        onPress={() => openPicker('start')}
-      />
+          <Text style={[styles.label, styles.spacedLabel]}>Starts</Text>
+          <PickerField
+            value={formatDateTime(startDate)}
+            onPress={() => openPicker('start')}
+            disabled={creating}
+          />
 
-      <Text style={styles.label}>Ends</Text>
-      <PickerField
-        value={formatDateTime(endDate)}
-        icon="moon-outline"
-        onPress={() => openPicker('end')}
-      />
-      <View style={styles.chipRow}>
-        {QUICK_END_OPTIONS.map((option) => (
-          <Pressable
-            key={option.label}
-            style={styles.chip}
-            onPress={() => handleQuickEnd(option.ms)}
-          >
-            <Text style={styles.chipText}>{option.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <Text style={styles.hint}>Tap a chip to set the end time from start.</Text>
+          <Text style={[styles.label, styles.spacedLabel]}>Ends</Text>
+          <PickerField
+            value={formatDateTime(endDate)}
+            onPress={() => openPicker('end')}
+            disabled={creating}
+          />
+          <View style={styles.chipRow}>
+            {QUICK_END_OPTIONS.map((option) => (
+              <Pressable
+                key={option.label}
+                accessibilityRole="button"
+                accessibilityLabel={`Set end time ${option.label}`}
+                disabled={creating}
+                onPress={() => handleQuickEnd(option.ms)}
+                style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
+              >
+                <Text style={styles.chipText}>{option.label}</Text>
+              </Pressable>
+            ))}
+          </View>
 
-      {message && <Text style={styles.message}>{message}</Text>}
+          {errorMessage ? (
+            <View accessibilityRole="alert" style={styles.errorBanner}>
+              <Ionicons name="alert-circle-outline" size={19} color={COLORS.danger} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
 
-      <AppButton
-        theme="primary"
-        title="Create Event"
-        icon="add-circle-outline"
-        onPress={handleCreateEvent}
-      />
+          {successMessage ? (
+            <View style={styles.successBanner}>
+              <Ionicons name="checkmark-circle-outline" size={19} color={COLORS.success} />
+              <Text style={styles.successText}>{successMessage}</Text>
+            </View>
+          ) : null}
 
-      {editTarget && (
-        <View style={styles.pickerContainer}>
-          <DateTimePicker
-            value={editTarget === 'start' ? startDate : endDate}
-            mode={isAndroid ? editingPart : 'datetime'}
-            display={isAndroid ? 'default' : 'spinner'}
-            onChange={onPickerChange}
+          <AppButton
+            theme="primary"
+            title="Create event QR"
+            icon="add-circle-outline"
+            onPress={handleCreateEvent}
+            loading={creating}
+            disabled={creating}
+            accessibilityHint="Save the event and generate its attendance QR code"
           />
         </View>
-      )}
 
-      {payload && (
-        <View style={styles.resultCard}>
-          <Text style={styles.resultTitle}>
-            Scan this QR code with the Scan tab:
-          </Text>
-          <View style={styles.qrBox}>
-            <QRCode value={payload} size={200} />
+        {editTarget ? (
+          <View style={styles.pickerContainer}>
+            <DateTimePicker
+              value={editTarget === 'start' ? startDate : endDate}
+              mode={isAndroid ? editingPart : 'datetime'}
+              display={isAndroid ? 'default' : 'spinner'}
+              onChange={onPickerChange}
+            />
           </View>
-          <Text style={styles.payloadText}>{payload}</Text>
-        </View>
-      )}
-    </ScrollView>
+        ) : null}
+
+        {payload ? (
+          <View style={styles.resultCard}>
+            <View style={styles.resultHeader}>
+              <Text style={styles.resultTitle}>QR ready</Text>
+            </View>
+            <View style={styles.qrBox}>
+              <QRCode
+                value={payload}
+                size={200}
+                color={COLORS.qrForeground}
+                backgroundColor={COLORS.qrBackground}
+              />
+            </View>
+             <Text style={styles.resultText}>Share with attendees.</Text>
+            {eventId.trim() ? (
+              <View style={styles.codeBadge}>
+                 <Text style={styles.codeLabel}>Code</Text>
+                <Text style={styles.codeValue}>{eventId.trim()}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 type PickerFieldProps = {
   value: string;
-  icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
+  disabled?: boolean;
 };
 
-function PickerField({ value, icon, onPress }: PickerFieldProps) {
+function PickerField({ value, onPress, disabled = false }: PickerFieldProps) {
   return (
     <Pressable
-      style={({ pressed }) => [styles.pickerField, pressed && styles.pickerFieldPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`${value}. Change date and time`}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
+      style={({ pressed }) => [
+        styles.pickerField,
+        pressed && !disabled && styles.pickerFieldPressed,
+        disabled && styles.disabled,
+      ]}
     >
-      <Ionicons name={icon} size={20} color={COLORS.primary} />
       <Text style={styles.pickerValue}>{value}</Text>
       <Ionicons name="calendar-outline" size={18} color={COLORS.textSecondary} />
     </Pressable>
   );
 }
 
+type TeacherStatusProps = {
+  icon?: keyof typeof Ionicons.glyphMap;
+  title: string;
+  loading?: boolean;
+};
+
+function TeacherStatus({ icon, title, loading = false }: TeacherStatusProps) {
+  return (
+    <SafeAreaView style={styles.statusScreen} edges={['top', 'left', 'right', 'bottom']}>
+      <View style={styles.statusContent}>
+        <View style={styles.statusIcon}>
+          {loading ? (
+            <ActivityIndicator size="large" color={COLORS.primary} />
+          ) : (
+            <Ionicons name={icon ?? 'information-circle-outline'} size={38} color={COLORS.primary} />
+          )}
+        </View>
+        <Text style={styles.statusTitle}>{title}</Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  keyboardView: {
+    flex: 1,
+  },
   content: {
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
     paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 40,
+    paddingTop: 12,
+    paddingBottom: 36,
   },
-  centerContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  lockedTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginTop: 12,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  lockedSubtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    lineHeight: 20,
-    marginBottom: 16,
+  formCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 18,
+    marginTop: 18,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
     color: COLORS.textPrimary,
-    marginBottom: 6,
-    marginTop: 10,
+    marginBottom: 8,
+  },
+  spacedLabel: {
+    marginTop: 17,
+  },
+  inputShell: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingLeft: 15,
+    paddingRight: 12,
   },
   input: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    flex: 1,
+    minHeight: 52,
+    paddingHorizontal: 12,
+    paddingVertical: 0,
     fontSize: 15,
     color: COLORS.textPrimary,
+    includeFontPadding: false,
   },
   pickerField: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
+    minHeight: 56,
+    backgroundColor: COLORS.surface,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
   },
   pickerFieldPressed: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.primaryLight,
   },
   pickerValue: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '700',
     color: COLORS.textPrimary,
     marginHorizontal: 10,
   },
   chipRow: {
     flexDirection: 'row',
-    marginTop: 8,
+    marginTop: 9,
   },
   chip: {
-    backgroundColor: COLORS.surface,
+    minHeight: 44,
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryLight,
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    marginRight: 8,
+    paddingHorizontal: 12,
+    marginRight: 7,
+  },
+  chipPressed: {
+    opacity: 0.72,
   },
   chipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-  hint: {
     fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 6,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.dangerSoft,
+    borderRadius: 14,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    marginTop: 16,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.danger,
+    marginLeft: 9,
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.successSoft,
+    borderRadius: 14,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    marginTop: 16,
+  },
+  successText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.success,
+    marginLeft: 9,
   },
   pickerContainer: {
-    marginTop: 12,
     alignItems: 'center',
-  },
-  message: {
-    fontSize: 14,
-    color: COLORS.primary,
-    textAlign: 'center',
-    marginTop: 12,
+    marginTop: 14,
   },
   resultCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 20,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 18,
+    marginTop: 18,
+  },
+  resultHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
   resultTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 19,
+    fontWeight: '800',
     color: COLORS.textPrimary,
-    textAlign: 'center',
-    marginBottom: 12,
   },
   qrBox: {
-    backgroundColor: '#FFFFFF',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 12,
+    alignSelf: 'center',
+    backgroundColor: COLORS.qrBackground,
+    borderRadius: 18,
+    padding: 15,
   },
-  payloadText: {
-    fontSize: 12,
+  resultText: {
+    fontSize: 13,
+    lineHeight: 19,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    lineHeight: 16,
+    marginTop: 15,
+  },
+  codeBadge: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginTop: 14,
+  },
+  codeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+  },
+  codeValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
+    marginTop: 3,
+  },
+  statusScreen: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  statusContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+  },
+  statusIcon: {
+    width: 82,
+    height: 82,
+    borderRadius: 28,
+    backgroundColor: COLORS.mint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  statusTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  disabled: {
+    opacity: 0.5,
   },
 });
