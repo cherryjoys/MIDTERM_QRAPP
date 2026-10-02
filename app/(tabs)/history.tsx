@@ -9,18 +9,25 @@ import {
   StyleSheet,
   Text,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
+import IconTile from '@/components/IconTile';
+import StatusChip from '@/components/StatusChip';
 import { COLORS } from '@/constants/colors';
+import { APP_ICONS, STATUS_META, STATUS_ORDER, type StatusKey } from '@/constants/icons';
 import { useAuth } from '@/lib/auth';
 import {
   getAttendanceHistory,
   getTeacherEventAttendance,
   getTeacherEventSummary,
+  type AttendanceEntry,
   type AttendanceRecord,
+  type ScannedStatus,
   type TeacherEventAttendance,
   type TeacherEventSummary,
 } from '@/lib/attendance';
@@ -67,8 +74,8 @@ export default function HistoryScreen() {
         setStudentRecords([]);
         setTeacherSummary([]);
       }
-    } catch {
-      setError('Could not load history.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load history.');
     } finally {
       setLoading(false);
     }
@@ -101,8 +108,8 @@ export default function HistoryScreen() {
         return;
       }
       setExpandedDetail(detail);
-    } catch {
-      setError('Could not load attendees.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load attendees.');
     } finally {
       setExpanding(false);
       setExpandingEventId(null);
@@ -126,7 +133,7 @@ export default function HistoryScreen() {
           {error ? <ErrorBanner message={error} onRetry={() => void load()} /> : null}
           {teacherSummary.length === 0 ? (
             <EmptyState
-              icon="calendar-outline"
+              icon={APP_ICONS.calendar}
               title="No events yet"
               buttonTitle="Create event"
               onPress={() => router.push('/teacher')}
@@ -143,9 +150,7 @@ export default function HistoryScreen() {
                   <View key={item.eventId} style={styles.card}>
                     <Pressable
                       accessibilityRole="button"
-                       accessibilityLabel={`${item.title}, ${item.attendeeCount} ${
-                         item.attendeeCount === 1 ? 'attendee' : 'attendees'
-                       }`}
+                       accessibilityLabel={`${item.title}, ${item.checkedInCount} checked in, ${item.lateCount} late, ${item.absentCount} absent`}
                       accessibilityState={{ expanded: isExpanded }}
                       disabled={expanding}
                       onPress={() => void handleExpand(item.eventId)}
@@ -156,8 +161,8 @@ export default function HistoryScreen() {
                         <Text style={styles.eventCode}>{item.eventCode}</Text>
                       </View>
                       <View style={styles.countBadge}>
-                        <Ionicons name="people-outline" size={14} color={COLORS.primary} />
-                        <Text style={styles.countBadgeText}>{item.attendeeCount}</Text>
+                        <Ionicons name={APP_ICONS.roster} size={14} color={COLORS.primary} />
+                        <Text style={styles.countBadgeText}>{item.checkedInCount}</Text>
                       </View>
                       <Ionicons
                         name={isExpanded ? 'chevron-up' : 'chevron-down'}
@@ -168,13 +173,20 @@ export default function HistoryScreen() {
 
                     {item.startTime ? (
                       <View style={styles.metaRow}>
-                        <Ionicons name="calendar-outline" size={15} color={COLORS.textSecondary} />
+                        <Ionicons name={APP_ICONS.calendar} size={15} color={COLORS.textSecondary} />
                         <Text style={styles.eventMeta}>{formatDate(item.startTime)}</Text>
                       </View>
                     ) : null}
 
-                    {!isExpanded && item.attendeeCount > 0 ? (
-                       <Text style={styles.expandHint}>View attendees</Text>
+                    <StatusTally
+                      present={item.presentCount}
+                      late={item.lateCount}
+                      absent={item.absentCount}
+                      style={styles.metaTally}
+                    />
+
+                    {!isExpanded && (item.checkedInCount > 0 || item.expectedCount > 0) ? (
+                       <Text style={styles.expandHint}>View roster</Text>
                     ) : null}
 
                     {isExpanded ? (
@@ -183,32 +195,11 @@ export default function HistoryScreen() {
                         {expanding ? (
                           <View style={styles.detailLoading}>
                             <ActivityIndicator size="small" color={COLORS.primary} />
-                             <Text style={styles.detailLoadingText}>Loading attendees</Text>
+                             <Text style={styles.detailLoadingText}>Loading roster</Text>
                           </View>
-                        ) : expandedDetail && expandedDetail.attendees.length === 0 ? (
-                          <View style={styles.emptyDetail}>
-                            <Ionicons name="people-outline" size={20} color={COLORS.textSecondary} />
-                             <Text style={styles.emptyDetailText}>No check-ins yet</Text>
-                          </View>
-                        ) : (
-                          expandedDetail?.attendees.map((attendee) => (
-                            <View key={attendee.studentId} style={styles.attendeeRow}>
-                              <View style={styles.attendeeAvatar}>
-                                <Text style={styles.attendeeAvatarText}>
-                                  {getInitials(attendee.studentName)}
-                                </Text>
-                              </View>
-                              <View style={styles.attendeeCopy}>
-                                <Text style={styles.attendeeText} numberOfLines={1}>
-                                  {attendee.studentName || 'Student account'}
-                                </Text>
-                                <Text style={styles.attendeeMeta}>
-                                  Checked in {formatDate(attendee.scannedAt)}
-                                </Text>
-                              </View>
-                            </View>
-                          ))
-                        )}
+                        ) : expandedDetail ? (
+                          <RosterDetail detail={expandedDetail} />
+                        ) : null}
                       </View>
                     ) : null}
                   </View>
@@ -223,7 +214,7 @@ export default function HistoryScreen() {
           {error ? <ErrorBanner message={error} onRetry={() => void load()} /> : null}
           {studentRecords.length === 0 ? (
             <EmptyState
-              icon="qr-code-outline"
+              icon={APP_ICONS.qr}
               title="No attendance yet"
               buttonTitle="Scan a QR"
               onPress={() => router.push('/scan')}
@@ -242,7 +233,7 @@ export default function HistoryScreen() {
         <View style={styles.screen}>
           <Header title={screenTitle} compact />
           <EmptyState
-            icon="person-outline"
+            icon={APP_ICONS.user}
             title="Role unavailable"
             buttonTitle="Retry"
             onPress={() => void load()}
@@ -269,8 +260,121 @@ function ErrorBanner({ message, onRetry }: ErrorBannerProps) {
         onPress={onRetry}
         style={styles.retryButton}
       >
+        <Ionicons name={APP_ICONS.retry} size={15} color={COLORS.danger} />
         <Text style={styles.retryText}>Retry</Text>
       </Pressable>
+    </View>
+  );
+}
+
+type TallyProps = {
+  present: number;
+  late: number;
+  absent: number;
+  hideEmpty?: boolean;
+  style?: StyleProp<ViewStyle>;
+};
+
+/**
+ * Present / Late / Absent as a single compact strip. With `hideEmpty` it only
+ * surfaces the states that actually have students in them.
+ */
+function StatusTally({ present, late, absent, hideEmpty = true, style }: TallyProps) {
+  const counts: Record<StatusKey, number> = { present, late, absent };
+  const visible = STATUS_ORDER.filter(
+    (key) => !hideEmpty || counts[key] > 0
+  );
+
+  if (visible.length === 0) return null;
+
+  return (
+    <View style={[styles.tally, style]}>
+      {visible.map((key) => (
+        <View key={key} style={styles.tallyItem}>
+          <Ionicons name={STATUS_META[key].icon} size={13} color={STATUS_META[key].color} />
+          <Text style={[styles.tallyCount, { color: STATUS_META[key].color }]}>
+            {counts[key]}
+          </Text>
+          <Text style={styles.tallyLabel}>{STATUS_META[key].label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function RosterDetail({ detail }: { detail: TeacherEventAttendance }) {
+  if (detail.entries.length === 0) {
+    return (
+      <View style={styles.emptyDetail}>
+        <Ionicons name={APP_ICONS.roster} size={20} color={COLORS.textSecondary} />
+         <Text style={styles.emptyDetailText}>No check-ins yet</Text>
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <StatusTally
+        present={detail.presentCount}
+        late={detail.lateCount}
+        absent={detail.absentCount}
+        hideEmpty={false}
+        style={styles.detailTally}
+      />
+      <View style={styles.rosterNote}>
+        <Ionicons name={APP_ICONS.timer} size={14} color={COLORS.textSecondary} />
+        <Text style={styles.rosterNoteText}>
+          Late after {detail.lateAfterMinutes} min
+        </Text>
+      </View>
+
+      {detail.entries.map((entry) => (
+        <RosterRow key={entry.key} entry={entry} />
+      ))}
+
+      {detail.expectedCount === 0 ? (
+        <View style={styles.rosterHint}>
+          <Ionicons name="information-circle-outline" size={15} color={COLORS.textSecondary} />
+          <Text style={styles.rosterHintText}>
+            Add expected students when you create the event to track absences.
+          </Text>
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+function RosterRow({ entry }: { entry: AttendanceEntry }) {
+  const meta = STATUS_META[entry.status];
+
+  return (
+    <View style={styles.attendeeRow}>
+      <IconTile
+        name={APP_ICONS.user}
+        size={34}
+        tone="neutral"
+        style={styles.attendeeAvatar}
+      />
+      <View style={styles.attendeeCopy}>
+        <Text style={styles.attendeeText} numberOfLines={1}>
+          {entry.studentName}
+        </Text>
+        <View style={styles.attendeeMetaRow}>
+          <Ionicons
+            name={entry.scannedAt ? APP_ICONS.clock : 'ellipse-outline'}
+            size={12}
+            color={COLORS.textSecondary}
+          />
+          <Text style={styles.attendeeMeta}>
+            {entry.scannedAt
+              ? `Checked in ${formatDate(entry.scannedAt)}`
+              : 'No scan recorded'}
+          </Text>
+        </View>
+      </View>
+      <View style={[styles.statusDot, { backgroundColor: meta.soft }]}>
+        <Ionicons name={meta.icon} size={15} color={meta.color} />
+      </View>
     </View>
   );
 }
@@ -285,18 +389,16 @@ type EmptyStateProps = {
 function EmptyState({ icon, title, buttonTitle, onPress }: EmptyStateProps) {
   return (
     <View style={styles.emptyCard}>
-      <View style={styles.emptyIcon}>
-        <Ionicons name={icon} size={30} color={COLORS.primary} />
-      </View>
+      <IconTile name={icon} size={64} style={styles.emptyIcon} />
       <Text style={styles.emptyTitle}>{title}</Text>
       <AppButton
         title={buttonTitle}
         icon={
-          icon === 'calendar-outline'
-            ? 'add-circle-outline'
-            : icon === 'person-outline'
-              ? 'refresh-outline'
-              : 'qr-code-outline'
+          icon === APP_ICONS.calendar
+            ? APP_ICONS.add
+            : icon === APP_ICONS.user
+              ? APP_ICONS.retry
+              : APP_ICONS.qr
         }
         onPress={onPress}
         variant="secondary"
@@ -306,21 +408,27 @@ function EmptyState({ icon, title, buttonTitle, onPress }: EmptyStateProps) {
 }
 
 function StudentRecord({ item }: { item: AttendanceRecord }) {
+  const status = item.status as ScannedStatus;
+
   return (
     <View style={styles.card}>
       <View style={styles.studentRecordTop}>
-        <View style={styles.recordIcon}>
-          <Ionicons name="checkmark-circle-outline" size={21} color={COLORS.primary} />
-        </View>
+        <IconTile
+          name={STATUS_META[status].icon}
+          size={40}
+          tone={status === 'late' ? 'late' : 'present'}
+          style={styles.recordIcon}
+        />
         <View style={styles.recordCopy}>
           <Text style={styles.eventTitle} numberOfLines={2}>
             {item.eventTitle || 'School event'}
           </Text>
           <Text style={styles.eventCode}>{item.eventId || 'Event code unavailable'}</Text>
         </View>
+        <StatusChip status={status} compact style={styles.recordChip} />
       </View>
       <View style={styles.metaRow}>
-        <Ionicons name="time-outline" size={15} color={COLORS.textSecondary} />
+        <Ionicons name={APP_ICONS.clock} size={15} color={COLORS.textSecondary} />
         <Text style={styles.eventMeta}>Recorded {formatDate(item.scannedAt)}</Text>
       </View>
     </View>
@@ -338,13 +446,6 @@ function formatDate(iso: string | null) {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-function getInitials(name: string | null) {
-  if (!name?.trim()) return 'S';
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
 const styles = StyleSheet.create({
@@ -387,14 +488,16 @@ const styles = StyleSheet.create({
     marginLeft: 9,
   },
   retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     minHeight: 44,
-    justifyContent: 'center',
     paddingHorizontal: 8,
   },
   retryText: {
     fontSize: 13,
     fontWeight: '800',
     color: COLORS.danger,
+    marginLeft: 5,
   },
   listContent: {
     paddingTop: 18,
@@ -434,7 +537,7 @@ const styles = StyleSheet.create({
   countBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.mint,
+    backgroundColor: COLORS.primaryLight,
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 6,
@@ -455,6 +558,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textSecondary,
     marginLeft: 6,
+  },
+  metaTally: {
+    marginTop: 10,
   },
   expandHint: {
     fontSize: 12,
@@ -492,37 +598,84 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginLeft: 8,
   },
+  tally: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  tallyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  tallyCount: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginLeft: 4,
+  },
+  tallyLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginLeft: 3,
+  },
+  detailTally: {
+    marginBottom: 12,
+  },
+  rosterNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  rosterNoteText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginLeft: 6,
+  },
   attendeeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
   },
   attendeeAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: COLORS.mint,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginRight: 10,
-  },
-  attendeeAvatarText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.primary,
   },
   attendeeCopy: {
     flex: 1,
+    paddingRight: 8,
   },
   attendeeText: {
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
+  attendeeMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
   attendeeMeta: {
     fontSize: 12,
     color: COLORS.textSecondary,
-    marginTop: 2,
+    marginLeft: 4,
+  },
+  statusDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rosterHint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 10,
+  },
+  rosterHintText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.textSecondary,
+    marginLeft: 6,
   },
   emptyCard: {
     alignItems: 'center',
@@ -535,12 +688,6 @@ const styles = StyleSheet.create({
     marginTop: 22,
   },
   emptyIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 22,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 16,
   },
   emptyTitle: {
@@ -554,16 +701,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   recordIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: COLORS.successSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginRight: 11,
   },
   recordCopy: {
     flex: 1,
     paddingRight: 8,
+  },
+  recordChip: {
+    marginLeft: 4,
   },
 });

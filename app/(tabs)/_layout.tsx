@@ -4,6 +4,7 @@ import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS } from '@/constants/colors';
+import { APP_ICONS } from '@/constants/icons';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -29,7 +30,7 @@ export default function TabLayout() {
           tabBarAccessibilityLabel: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'home-sharp' : 'home-outline'}
+              name={focused ? 'home-sharp' : APP_ICONS.home}
               color={color}
               size={23}
             />
@@ -43,7 +44,7 @@ export default function TabLayout() {
           tabBarAccessibilityLabel: 'Scan attendance',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'qr-code' : 'qr-code-outline'}
+              name={focused ? 'qr-code' : APP_ICONS.qr}
               color={color}
               size={24}
             />
@@ -57,9 +58,9 @@ export default function TabLayout() {
           tabBarAccessibilityLabel: 'Attendance history',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'time' : 'time-outline'}
+              name={focused ? 'clipboard' : APP_ICONS.history}
               color={color}
-              size={23}
+              size={22}
             />
           ),
         }}
@@ -85,7 +86,7 @@ export default function TabLayout() {
           tabBarAccessibilityLabel: 'Profile',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'person' : 'person-outline'}
+              name={focused ? 'person' : APP_ICONS.user}
               color={color}
               size={23}
             />
@@ -99,7 +100,7 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: COLORS.card,
-    borderTopColor: COLORS.lightSage,
+    borderTopColor: COLORS.border,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   tabLabel: {

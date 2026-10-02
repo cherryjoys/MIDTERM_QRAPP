@@ -1,11 +1,12 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
+import IconTile from '@/components/IconTile';
 import { COLORS } from '@/constants/colors';
+import { APP_ICONS } from '@/constants/icons';
 import { useAuth } from '@/lib/auth';
 import { useRole } from '@/lib/useRole';
 
@@ -33,36 +34,32 @@ export default function Index() {
               {isTeacher ? 'Teacher tools' : `Hello, ${displayName}`}
             </Text>
           </View>
-          <View style={styles.avatar}>
-            <Ionicons
-              name={isTeacher ? 'school-outline' : 'sparkles-outline'}
-              size={25}
-              color={COLORS.primary}
-            />
-          </View>
+          <IconTile
+            name={isTeacher ? 'school-outline' : APP_ICONS.sparkle}
+            size={56}
+            style={styles.avatar}
+          />
         </View>
 
         <View style={styles.heroCard}>
-          <View style={styles.heroIcon}>
-            <Ionicons
-              name={isTeacher ? 'qr-code-outline' : 'scan-outline'}
-              size={25}
-              color={COLORS.primary}
-            />
-          </View>
+          <IconTile
+            name={isTeacher ? APP_ICONS.qr : APP_ICONS.scan}
+            size={48}
+            style={styles.heroIcon}
+          />
           <Text style={styles.heroTitle}>
             {isTeacher ? 'Event attendance' : 'Attendance check-in'}
           </Text>
           {roleLoading ? (
             <View style={styles.heroLoading}>
-              <ActivityIndicator size="small" color={COLORS.mint} />
+              <ActivityIndicator size="small" color={COLORS.primaryLight} />
               <Text style={styles.heroLoadingText}>Preparing your space...</Text>
             </View>
           ) : (
             <AppButton
               variant="secondary"
               title={isTeacher ? 'Create event QR' : 'Scan attendance'}
-              icon={isTeacher ? 'add-circle-outline' : 'qr-code-outline'}
+              icon={isTeacher ? APP_ICONS.add : APP_ICONS.qr}
               onPress={() => router.push(isTeacher ? '/teacher' : '/scan')}
               accessibilityHint={isTeacher ? 'Open the event creator' : 'Open the QR scanner'}
             />
@@ -104,12 +101,7 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 20,
-    backgroundColor: COLORS.mint,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginLeft: 4,
   },
   heroCard: {
     backgroundColor: COLORS.primary,
@@ -122,12 +114,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   heroIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 17,
-    backgroundColor: COLORS.mint,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 16,
   },
   heroTitle: {
@@ -143,7 +129,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
-    backgroundColor: COLORS.mint,
+    backgroundColor: COLORS.primaryLight,
   },
   heroLoadingText: {
     fontSize: 14,

@@ -1,38 +1,44 @@
 export const COLORS = {
-  primary: '#043F34',
-  sage: '#71967D',
-  lightSage: '#AFCAB8',
-  mint: '#B6E5D2',
+  // Brand — lavender / violet
+  primary: '#5B3FBF',
+  primaryDark: '#3E2A85',
+  primaryLight: '#EDE7FE',
 
-  primaryLight: '#B6E5D2',
-  primaryDark: '#043F34',
+  accent: '#7C5CD6',
+  accentSoft: '#F4F0FE',
 
-  gradientStart: '#B6E5D2',
-  gradientMiddle: '#71967D',
-  gradientEnd: '#043F34',
-
-  background: '#F4F8F5',
+  background: '#F7F5FE',
   card: '#FFFFFF',
 
-  textPrimary: '#043F34',
-  textSecondary: '#4C665B',
+  textPrimary: '#2A1B54',
+  textSecondary: '#6E6395',
   textOnPrimary: '#FFFFFF',
 
-  surface: '#EAF4EE',
-  border: '#AFCAB8',
-  shadow: '#043F34',
+  surface: '#F3EFFE',
+  border: '#E3DAF8',
+  shadow: '#4B32A0',
 
   qrBackground: '#FFFFFF',
-  qrForeground: '#043F34',
+  qrForeground: '#3B2478',
 
-  warning: '#8A5A12',
-  warningSoft: '#FFF4DD',
-  success: '#043F34',
-  successSoft: '#B6E5D2',
-  danger: '#A33A3A',
-  dangerSoft: '#FCEBEC',
-  accent: '#71967D',
-  accentSoft: '#B6E5D2',
-  overlay: 'rgba(4, 63, 52, 0.82)',
+  // Attendance states
+  present: '#1F8A63',
+  presentSoft: '#DEF3EA',
+  late: '#B26A12',
+  lateSoft: '#FDF1DC',
+  absent: '#C2435C',
+  absentSoft: '#FBE8EC',
+
+  // Semantic aliases
+  success: '#1F8A63',
+  successSoft: '#DEF3EA',
+  warning: '#B26A12',
+  warningSoft: '#FDF1DC',
+  danger: '#C2435C',
+  dangerSoft: '#FBE8EC',
+
+  overlay: 'rgba(42, 27, 84, 0.82)',
   white: '#FFFFFF',
 } as const;
+
+export type ColorToken = keyof typeof COLORS;

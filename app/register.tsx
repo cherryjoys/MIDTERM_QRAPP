@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
 import { COLORS } from '@/constants/colors';
+import { APP_ICONS, type IconName } from '@/constants/icons';
 import { signUp } from '@/lib/auth';
 
 export default function RegisterScreen() {
@@ -90,12 +91,18 @@ export default function RegisterScreen() {
           {success ? (
             <View style={styles.successCard}>
               <View style={styles.successIcon}>
-                <Ionicons name="checkmark-circle" size={38} color={COLORS.primary} />
+                <Ionicons name="checkmark-circle" size={38} color={COLORS.present} />
               </View>
               <Text style={styles.successTitle}>Check your email</Text>
               <Text style={styles.successText}>Confirmation sent to {email}.</Text>
               <Link href="/login" style={styles.successLink}>
-                Sign in
+                <Ionicons
+                  name="arrow-forward"
+                  size={15}
+                  color={COLORS.primary}
+                  style={styles.successLinkIcon}
+                />
+                <Text style={styles.successLinkText}>Sign in</Text>
               </Link>
             </View>
           ) : (
@@ -103,7 +110,7 @@ export default function RegisterScreen() {
               <View style={styles.formCard}>
                 <Text style={styles.label}>Full name</Text>
                 <View style={styles.inputShell}>
-                  <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} />
+                  <Ionicons name={APP_ICONS.user} size={20} color={COLORS.textSecondary} />
                   <TextInput
                     accessibilityLabel="Full name"
                     style={styles.input}
@@ -118,7 +125,7 @@ export default function RegisterScreen() {
 
                 <Text style={[styles.label, styles.spacedLabel]}>Email address</Text>
                 <View style={styles.inputShell}>
-                  <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} />
+                  <Ionicons name={APP_ICONS.mail} size={20} color={COLORS.textSecondary} />
                   <TextInput
                     accessibilityLabel="Email address"
                     style={styles.input}
@@ -135,7 +142,7 @@ export default function RegisterScreen() {
 
                 <Text style={[styles.label, styles.spacedLabel]}>Password</Text>
                 <View style={styles.inputShell}>
-                  <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} />
+                  <Ionicons name={APP_ICONS.lock} size={20} color={COLORS.textSecondary} />
                   <TextInput
                     accessibilityLabel="Password"
                     style={styles.input}
@@ -195,58 +202,20 @@ export default function RegisterScreen() {
 
                 <Text style={[styles.label, styles.spacedLabel]}>Role</Text>
                 <View accessibilityRole="radiogroup" style={styles.roleRow}>
-                  <Pressable
-                    accessibilityRole="radio"
-                    accessibilityLabel="Student"
-                    accessibilityState={{ checked: role === 'student' }}
-                    style={({ pressed }) => [
-                      styles.roleChip,
-                      role === 'student' && styles.roleChipActive,
-                      pressed && !loading && styles.chipPressed,
-                    ]}
+                  <RoleChip
+                    label="Student"
+                    icon="school-outline"
+                    selected={role === 'student'}
+                    disabled={loading}
                     onPress={() => setRole('student')}
+                  />
+                  <RoleChip
+                    label="Teacher"
+                    icon="briefcase-outline"
+                    selected={role === 'teacher'}
                     disabled={loading}
-                  >
-                    <Ionicons
-                      name="school-outline"
-                      size={19}
-                      color={role === 'student' ? COLORS.primary : COLORS.textSecondary}
-                    />
-                    <Text
-                      style={[
-                        styles.roleChipText,
-                        role === 'student' && styles.roleChipTextActive,
-                      ]}
-                    >
-                      Student
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="radio"
-                    accessibilityLabel="Teacher"
-                    accessibilityState={{ checked: role === 'teacher' }}
-                    style={({ pressed }) => [
-                      styles.roleChip,
-                      role === 'teacher' && styles.roleChipActive,
-                      pressed && !loading && styles.chipPressed,
-                    ]}
                     onPress={() => setRole('teacher')}
-                    disabled={loading}
-                  >
-                    <Ionicons
-                      name="briefcase-outline"
-                      size={19}
-                      color={role === 'teacher' ? COLORS.primary : COLORS.textSecondary}
-                    />
-                    <Text
-                      style={[
-                        styles.roleChipText,
-                        role === 'teacher' && styles.roleChipTextActive,
-                      ]}
-                    >
-                      Teacher
-                    </Text>
-                  </Pressable>
+                  />
                 </View>
 
                 {error ? (
@@ -263,6 +232,7 @@ export default function RegisterScreen() {
                   onPress={handleRegister}
                   loading={loading}
                   disabled={loading}
+                  style={styles.submitButton}
                   accessibilityHint="Create your QR Attendance account"
                 />
               </View>
@@ -270,7 +240,13 @@ export default function RegisterScreen() {
               <View style={styles.footer}>
                 <Text style={styles.footerText}>Already registered?</Text>
                 <Link href="/login" style={styles.link}>
-                  Sign in
+                  <Ionicons
+                    name="arrow-forward"
+                    size={14}
+                    color={COLORS.primary}
+                    style={styles.linkIcon}
+                  />
+                  <Text style={styles.linkText}>Sign in</Text>
                 </Link>
               </View>
             </>
@@ -278,6 +254,46 @@ export default function RegisterScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+type RoleChipProps = {
+  label: string;
+  icon: IconName;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+};
+
+function RoleChip({ label, icon, selected, disabled = false, onPress }: RoleChipProps) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: selected }}
+      style={({ pressed }) => [
+        styles.roleChip,
+        selected && styles.roleChipActive,
+        pressed && !disabled && styles.chipPressed,
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Ionicons
+        name={icon}
+        size={19}
+        color={selected ? COLORS.primary : COLORS.textSecondary}
+      />
+      <Text style={[styles.roleChipText, selected && styles.roleChipTextActive]}>
+        {label}
+      </Text>
+      <Ionicons
+        name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+        size={17}
+        color={selected ? COLORS.primary : COLORS.border}
+        style={styles.roleChipCheck}
+      />
+    </Pressable>
   );
 }
 
@@ -364,6 +380,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryLight,
     borderColor: COLORS.primary,
   },
+  roleChipCheck: {
+    position: 'absolute',
+    right: 10,
+  },
   chipPressed: {
     opacity: 0.78,
   },
@@ -392,6 +412,9 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     marginLeft: 9,
   },
+  submitButton: {
+    marginTop: 22,
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -403,10 +426,17 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   link: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 5,
+  },
+  linkIcon: {
+    marginRight: 5,
+  },
+  linkText: {
     fontSize: 14,
     fontWeight: '800',
     color: COLORS.primary,
-    marginLeft: 5,
   },
   successCard: {
     alignItems: 'center',
@@ -422,7 +452,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 24,
-    backgroundColor: COLORS.successSoft,
+    backgroundColor: COLORS.presentSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 18,
@@ -441,6 +471,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   successLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  successLinkIcon: {
+    marginRight: 6,
+  },
+  successLinkText: {
     fontSize: 15,
     fontWeight: '800',
     color: COLORS.primary,

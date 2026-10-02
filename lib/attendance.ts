@@ -1,41 +1,106 @@
 import { supabase } from './supabase';
 import { parseQRPayload } from './qr';
-import { getEventByCode } from './events';
+import { DEFAULT_LATE_AFTER_MINUTES, getEventByCode } from './events';
+import type { StatusKey } from '@/constants/icons';
+
+/** A scan can only ever be present or late. */
+export type ScannedStatus = Exclude<StatusKey, 'absent'>;
+/** Roster rows without a scan are absent, so all three can appear in a list. */
+export type AttendanceStatus = StatusKey;
 
 export type AttendanceRecord = {
   id: string;
   eventId: string;
   eventTitle: string;
   scannedAt: string;
+  status: ScannedStatus;
 };
 
 export type RegisterResult = {
   success: boolean;
   message: string;
   eventTitle?: string;
+  status?: ScannedStatus;
 };
 
-export type TeacherEventAttendance = {
+export type AttendanceEntry = {
+  key: string;
+  studentId: string | null;
+  studentName: string;
+  status: AttendanceStatus;
+  scannedAt: string | null;
+};
+
+export type AttendanceCounts = {
+  presentCount: number;
+  lateCount: number;
+  absentCount: number;
+  checkedInCount: number;
+  expectedCount: number;
+};
+
+export type TeacherEventAttendance = AttendanceCounts & {
   eventId: string;
   eventCode: string;
   title: string;
   startTime: string | null;
   endTime: string | null;
-  attendeeCount: number;
-  attendees: {
-    studentId: string;
-    studentName: string | null;
-    scannedAt: string;
-  }[];
+  lateAfterMinutes: number;
+  entries: AttendanceEntry[];
 };
 
-export type TeacherEventSummary = {
+export type TeacherEventSummary = AttendanceCounts & {
   eventId: string;
   eventCode: string;
   title: string;
   startTime: string | null;
-  attendeeCount: number;
+  lateAfterMinutes: number;
 };
+
+
+/**
+ * Mirrors the `resolve_attendance_status` trigger in lib/schema.sql. The
+ * database is authoritative — this exists so the app can reason about a scan
+ * before it is written, and as a fallback if a row predates the trigger.
+ */
+export function resolveScannedStatus(
+  scannedAtMs: number,
+  startTime: string | null,
+  lateAfterMinutes: number | null | undefined
+): ScannedStatus {
+  if (!startTime) return 'present';
+  const startMs = new Date(startTime).getTime();
+  if (Number.isNaN(startMs)) return 'present';
+  const grace = lateAfterMinutes ?? DEFAULT_LATE_AFTER_MINUTES;
+  return scannedAtMs > startMs + grace * 60_000 ? 'late' : 'present';
+}
+
+function statusMessage(status: ScannedStatus): string {
+  return status === 'late'
+    ? 'Attendance recorded as late.'
+    : 'Attendance recorded on time.';
+}
+
+type SupabaseError = { message: string; code?: string };
+
+/**
+ * Turns a Postgres/Supabase error into something actionable. A missing column
+ * or table almost always means lib/schema.sql has not been run against the
+ * project yet, which is otherwise invisible to the user.
+ */
+function describeDbError(error: SupabaseError): Error {
+  const message = error.message ?? 'Unknown database error';
+  if (
+    error.code === '42P01' ||
+    error.code === '42703' ||
+    /does not exist|could not find the .* column|schema cache/i.test(message)
+  ) {
+    return new Error(
+      'Database is missing recent updates. Run lib/schema.sql in the Supabase SQL editor.'
+    );
+  }
+  return new Error(message);
+}
 
 export async function registerAttendance(
   rawPayload: string,
@@ -59,7 +124,8 @@ export async function registerAttendance(
   }
 
   const title = payload.title ?? payload.event;
-  let event: { id: string; title: string } | null = null;
+  let event: { id: string; title: string; start_time: string | null; late_after_minutes: number } | null =
+    null;
 
   const foundEvent = await getEventByCode(payload.event);
   if (foundEvent) {
@@ -75,21 +141,27 @@ export async function registerAttendance(
           end_time: payload.end ?? null,
         },
       ])
-      .select('id, title')
+      .select('id, title, start_time, late_after_minutes')
       .single();
 
     if (insertError) {
-      return { success: false, message: 'Could not create event.' };
+      return { success: false, message: describeDbError(insertError).message };
     }
     event = newEvent;
   }
 
-  const { error: attError } = await supabase.from('attendance').insert([
-    {
-      student_id: studentId,
-      event_id: event.id,
-    },
-  ]);
+  // The trigger derives this too, but reading it back keeps one code path and
+  // surfaces the real stored value instead of a client-side guess.
+  const { data: inserted, error: attError } = await supabase
+    .from('attendance')
+    .insert([
+      {
+        student_id: studentId,
+        event_id: event.id,
+      },
+    ])
+    .select('status')
+    .single();
 
   if (attError) {
     if (attError.code === '23505') {
@@ -99,13 +171,18 @@ export async function registerAttendance(
         eventTitle: event.title,
       };
     }
-    return { success: false, message: attError.message };
+    return { success: false, message: describeDbError(attError).message };
   }
+
+  const status =
+    (inserted?.status as ScannedStatus | null | undefined) ??
+    resolveScannedStatus(now, event.start_time ?? payload.start ?? null, event.late_after_minutes);
 
   return {
     success: true,
-    message: 'Attendance recorded!',
+    message: statusMessage(status),
     eventTitle: event.title,
+    status,
   };
 }
 
@@ -114,11 +191,14 @@ export async function getAttendanceHistory(
 ): Promise<AttendanceRecord[]> {
   const { data, error } = await supabase
     .from('attendance')
-    .select('id, scanned_at, events ( event_code, title )')
+    .select('id, scanned_at, status, events ( event_code, title )')
     .eq('student_id', studentId)
     .order('scanned_at', { ascending: false });
 
-  if (error || !data) {
+  if (error) {
+    throw describeDbError(error);
+  }
+  if (!data) {
     return [];
   }
 
@@ -127,6 +207,7 @@ export async function getAttendanceHistory(
     eventId: row.events?.event_code ?? '',
     eventTitle: row.events?.title ?? '',
     scannedAt: row.scanned_at,
+    status: row.status === 'late' ? 'late' : 'present',
   }));
 }
 
@@ -135,82 +216,53 @@ export async function getTeacherEventAttendance(
 ): Promise<TeacherEventAttendance[]> {
   const { data: events, error: eventError } = await supabase
     .from('events')
-    .select('id, event_code, title, start_time, end_time')
+    .select('id, event_code, title, start_time, end_time, late_after_minutes')
     .eq('created_by', teacherId)
     .order('created_at', { ascending: false });
 
-  if (eventError || !events) return [];
-
-  const codes = Array.from(
-    new Set(events.map((e: any) => e.event_code))
-  ).filter(Boolean) as string[];
-  if (codes.length === 0) return [];
-
-  const { data: codeEvents, error: codeError } = await supabase
-    .from('events')
-    .select('id, event_code')
-    .in('event_code', codes);
-
-  if (codeError || !codeEvents) return [];
-
-  const allEventIds = Array.from(
-    new Set(codeEvents.map((e: any) => e.id))
-  ) as string[];
-  const codeToEventIds = new Map<string, string[]>();
-  for (const e of codeEvents as any[]) {
-    const prev = codeToEventIds.get(e.event_code) ?? [];
-    prev.push(e.id);
-    codeToEventIds.set(e.event_code, prev);
+  if (eventError) {
+    throw describeDbError(eventError);
   }
+  if (!events) return [];
 
-  const { data: attendance, error: attError } = await supabase
-    .from('attendance')
-    .select('student_id, scanned_at, event_id')
-    .in('event_id', allEventIds)
-    .order('scanned_at', { ascending: false });
+  const codeToEventIds = await mapCodeToEventIds(events);
+  const allEventIds = Array.from(codeToEventIds.values()).flat();
+  if (allEventIds.length === 0) return [];
 
-  if (attError || !attendance) return [];
+  const [attendance, roster] = await Promise.all([
+    supabase
+      .from('attendance')
+      .select('student_id, scanned_at, status, event_id')
+      .in('event_id', allEventIds)
+      .order('scanned_at', { ascending: false }),
+    supabase
+      .from('event_roster')
+      .select('event_id, student_id, student_name')
+      .in('event_id', allEventIds),
+  ]);
 
-  const studentIds = Array.from(
-    new Set(attendance.map((a: any) => a.student_id))
-  ) as string[];
-  const nameById = new Map<string, string | null>();
-  if (studentIds.length > 0) {
-    const { data: profiles, error: profilesError } = await supabase
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', studentIds);
-    if (!profilesError && profiles) {
-      for (const p of profiles as any[]) {
-        nameById.set(p.id, p.full_name ?? null);
-      }
-    }
+  if (attendance.error) {
+    throw describeDbError(attendance.error);
   }
+  if (roster.error) {
+    throw describeDbError(roster.error);
+  }
+  if (!attendance.data) return [];
 
-  return events.map((e: any) => {
-    const matchIds = new Set(codeToEventIds.get(e.event_code) ?? [e.id]);
-    const rows = attendance.filter((a: any) => matchIds.has(a.event_id));
+  const nameById = await loadProfileNames(
+    (attendance.data as any[]).map((a) => a.student_id as string)
+  );
 
-    const seen = new Set<string>();
-    const uniqueRows = rows.filter((a: any) => {
-      if (seen.has(a.student_id)) return false;
-      seen.add(a.student_id);
-      return true;
-    });
+  return events.map((event: any) => {
+    const matchIds = new Set(codeToEventIds.get(event.event_code) ?? [event.id]);
+    const scans = earliestScanByStudent(
+      (attendance.data as any[]).filter((a) => matchIds.has(a.event_id))
+    );
+    const rosterRows = ((roster.data ?? []) as any[]).filter((r) =>
+      matchIds.has(r.event_id)
+    );
 
-    return {
-      eventId: e.id,
-      eventCode: e.event_code,
-      title: e.title,
-      startTime: e.start_time,
-      endTime: e.end_time,
-      attendeeCount: seen.size,
-      attendees: uniqueRows.map((a: any) => ({
-        studentId: a.student_id,
-        studentName: nameById.get(a.student_id) ?? null,
-        scannedAt: a.scanned_at,
-      })),
-    };
+    return buildEventDetail(event, matchIds, scans, rosterRows, nameById);
   });
 }
 
@@ -219,59 +271,236 @@ export async function getTeacherEventSummary(
 ): Promise<TeacherEventSummary[]> {
   const { data: events, error: eventError } = await supabase
     .from('events')
-    .select('id, event_code, title, start_time')
+    .select('id, event_code, title, start_time, late_after_minutes')
     .eq('created_by', teacherId)
     .order('created_at', { ascending: false });
 
-  if (eventError || !events) return [];
+  if (eventError) {
+    throw describeDbError(eventError);
+  }
+  if (!events) return [];
 
-  const codes = Array.from(
-    new Set(events.map((e: any) => e.event_code))
-  ).filter(Boolean) as string[];
-  if (codes.length === 0) return [];
+  const codeToEventIds = await mapCodeToEventIds(events);
+  const allEventIds = Array.from(codeToEventIds.values()).flat();
+  if (allEventIds.length === 0) return [];
 
-  const { data: codeEvents, error: codeError } = await supabase
+  const [attendance, roster] = await Promise.all([
+    supabase
+      .from('attendance')
+      .select('student_id, event_id, status')
+      .in('event_id', allEventIds),
+    supabase
+      .from('event_roster')
+      .select('event_id')
+      .in('event_id', allEventIds),
+  ]);
+
+  if (attendance.error) {
+    throw describeDbError(attendance.error);
+  }
+  if (roster.error) {
+    throw describeDbError(roster.error);
+  }
+  if (!attendance.data) return [];
+
+  const scansByEvent = new Map<string, Set<string>>();
+  const lateStudents = new Map<string, Set<string>>();
+  for (const row of attendance.data as any[]) {
+    if (!addToSet(scansByEvent, row.event_id, row.student_id)) continue;
+    if (row.status === 'late') {
+      addToSet(lateStudents, row.event_id, row.student_id);
+    }
+  }
+
+  const rosterByEvent = new Map<string, number>();
+  for (const row of (roster.data ?? []) as any[]) {
+    rosterByEvent.set(row.event_id, (rosterByEvent.get(row.event_id) ?? 0) + 1);
+  }
+
+  return events.map((event: any) => {
+    const ids = codeToEventIds.get(event.event_code) ?? [event.id];
+    const scans = new Set<string>();
+    const late = new Set<string>();
+    let expected = 0;
+
+    for (const id of ids) {
+      (scansByEvent.get(id) ?? new Set()).forEach((studentId) => scans.add(studentId));
+      (lateStudents.get(id) ?? new Set()).forEach((studentId) => late.add(studentId));
+      expected += rosterByEvent.get(id) ?? 0;
+    }
+
+    const lateCount = Array.from(scans).filter((id) => late.has(id)).length;
+    const checkedInCount = scans.size;
+
+    return {
+      eventId: event.id,
+      eventCode: event.event_code,
+      title: event.title,
+      startTime: event.start_time,
+      lateAfterMinutes: event.late_after_minutes ?? DEFAULT_LATE_AFTER_MINUTES,
+      presentCount: checkedInCount - lateCount,
+      lateCount,
+      absentCount: Math.max(0, expected - checkedInCount),
+      checkedInCount,
+      expectedCount: expected,
+    };
+  });
+}
+
+async function mapCodeToEventIds(
+  events: any[]
+): Promise<Map<string, string[]>> {
+  const codes = Array.from(new Set(events.map((e) => e.event_code))).filter(
+    Boolean
+  ) as string[];
+  if (codes.length === 0) return new Map();
+
+  const { data: codeEvents } = await supabase
     .from('events')
     .select('id, event_code')
     .in('event_code', codes);
 
-  if (codeError || !codeEvents) return [];
+  const map = new Map<string, string[]>();
+  for (const event of (codeEvents ?? []) as any[]) {
+    const previous = map.get(event.event_code) ?? [];
+    previous.push(event.id);
+    map.set(event.event_code, previous);
+  }
+  return map;
+}
 
-  const allEventIds = Array.from(
-    new Set(codeEvents.map((e: any) => e.id))
-  ) as string[];
+/** First scan per student wins, so a re-scan never rewrites the check-in time. */
+function earliestScanByStudent(rows: any[]): Map<string, any> {
+  const byStudent = new Map<string, any>();
+  for (const row of rows) {
+    const existing = byStudent.get(row.student_id);
+    if (!existing || row.scanned_at < existing.scanned_at) {
+      byStudent.set(row.student_id, row);
+    }
+  }
+  return byStudent;
+}
 
-  const { data: attRows, error: attError } = await supabase
-    .from('attendance')
-    .select('event_id')
-    .in('event_id', allEventIds);
+function buildEventDetail(
+  event: any,
+  matchIds: Set<string>,
+  scans: Map<string, any>,
+  rosterRows: any[],
+  nameById: Map<string, string | null>
+): TeacherEventAttendance {
+  const entries: AttendanceEntry[] = [];
+  const seenKeys = new Set<string>();
 
-  if (attError || !attRows) return [];
+  for (const rosterRow of rosterRows) {
+    const key = rosterRow.student_name as string;
+    seenKeys.add(key.toLowerCase());
 
-  const counts: Record<string, number> = {};
-  for (const row of attRows as any[]) {
-    counts[row.event_id] = (counts[row.event_id] ?? 0) + 1;
+    const scan =
+      (rosterRow.student_id ? scans.get(rosterRow.student_id) : undefined) ??
+      findScanByName(scans, rosterRow.student_name as string, nameById);
+
+    entries.push({
+      key: `roster-${rosterRow.id ?? key}`,
+      studentId: rosterRow.student_id ?? scan?.student_id ?? null,
+      studentName: rosterRow.student_name,
+      status: scan ? normalizeScannedStatus(scan.status) : 'absent',
+      scannedAt: scan?.scanned_at ?? null,
+    });
   }
 
-  const codeToEventIds = new Map<string, string[]>();
-  for (const e of codeEvents as any[]) {
-    const prev = codeToEventIds.get(e.event_code) ?? [];
-    prev.push(e.id);
-    codeToEventIds.set(e.event_code, prev);
+  // Students who scanned an event they were not rostered for still count.
+  for (const [studentId, scan] of scans) {
+    const name = nameById.get(studentId) ?? null;
+    if (name && seenKeys.has(name.toLowerCase())) continue;
+    entries.push({
+      key: `scan-${studentId}`,
+      studentId,
+      studentName: name ?? 'Student account',
+      status: normalizeScannedStatus(scan.status),
+      scannedAt: scan.scanned_at,
+    });
   }
 
-  return events.map((e: any) => {
-    const ids = codeToEventIds.get(e.event_code) ?? [e.id];
-    const attendeeCount = ids.reduce(
-      (sum, id) => sum + (counts[id] ?? 0),
-      0
-    );
-    return {
-      eventId: e.id,
-      eventCode: e.event_code,
-      title: e.title,
-      startTime: e.start_time,
-      attendeeCount,
-    };
-  });
+  const counts = countStatuses(entries);
+
+  return {
+    eventId: event.id,
+    eventCode: event.event_code,
+    title: event.title,
+    startTime: event.start_time,
+    endTime: event.end_time,
+    lateAfterMinutes: event.late_after_minutes ?? DEFAULT_LATE_AFTER_MINUTES,
+    entries,
+    ...counts,
+  };
+}
+
+function countStatuses(entries: AttendanceEntry[]): AttendanceCounts {
+  let presentCount = 0;
+  let lateCount = 0;
+  let absentCount = 0;
+
+  for (const entry of entries) {
+    if (entry.status === 'late') lateCount += 1;
+    else if (entry.status === 'absent') absentCount += 1;
+    else presentCount += 1;
+  }
+
+  return {
+    presentCount,
+    lateCount,
+    absentCount,
+    checkedInCount: presentCount + lateCount,
+    expectedCount: entries.length,
+  };
+}
+
+function normalizeScannedStatus(value: unknown): ScannedStatus {
+  return value === 'late' ? 'late' : 'present';
+}
+
+/** Roster rows without a linked account fall back to matching by name. */
+function findScanByName(
+  scans: Map<string, any>,
+  rosterName: string,
+  nameById: Map<string, string | null>
+): any | undefined {
+  const wanted = rosterName.trim().toLowerCase();
+  if (!wanted) return undefined;
+
+  for (const [studentId, scan] of scans) {
+    const name = nameById.get(studentId);
+    if (name && name.trim().toLowerCase() === wanted) return scan;
+  }
+  return undefined;
+}
+
+async function loadProfileNames(
+  ids: string[]
+): Promise<Map<string, string | null>> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  const map = new Map<string, string | null>();
+  if (unique.length === 0) return map;
+
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, full_name')
+    .in('id', unique);
+
+  for (const profile of (data ?? []) as any[]) {
+    map.set(profile.id, profile.full_name ?? null);
+  }
+  return map;
+}
+
+function addToSet(
+  map: Map<string, Set<string>>,
+  key: string,
+  value: string
+): boolean {
+  const set = map.get(key) ?? new Set<string>();
+  if (set.has(value)) return false;
+  set.add(value);
+  map.set(key, set);
+  return true;
 }

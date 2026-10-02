@@ -1,5 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleProp,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
+} from 'react-native';
 
 import { COLORS } from '@/constants/colors';
 
@@ -14,6 +22,7 @@ type Props = {
   loading?: boolean;
   disabled?: boolean;
   compact?: boolean;
+  style?: StyleProp<ViewStyle>;
   accessibilityHint?: string;
 };
 
@@ -26,6 +35,7 @@ export default function AppButton({
   loading = false,
   disabled = false,
   compact = false,
+  style,
   accessibilityHint,
 }: Props) {
   const buttonVariant = variant ?? (theme === 'primary' ? 'primary' : 'secondary');
@@ -33,7 +43,7 @@ export default function AppButton({
   const isPrimary = buttonVariant === 'primary';
 
   return (
-    <View style={[styles.buttonOuter, compact && styles.compactOuter]}>
+    <View style={[styles.buttonOuter, compact && styles.compactOuter, style]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={title}
@@ -118,7 +128,7 @@ const styles = StyleSheet.create({
   },
   secondaryFill: {
     backgroundColor: COLORS.surface,
-    borderColor: COLORS.lightSage,
+    borderColor: COLORS.border,
   },
   ghostFill: {
     backgroundColor: 'transparent',

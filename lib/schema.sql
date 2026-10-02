@@ -6,6 +6,10 @@
 -- integrates with Supabase Auth (auth.users) and adds Row Level
 -- Security so each user can only see their own data.
 --
+-- It also adds the `event_roster` table plus a `status` column on
+-- `attendance`, which together make Present / Late / Absent real:
+-- see section 2B for how the three states are derived.
+--
 -- HOW TO RUN:
 --   1. Open Supabase Dashboard -> SQL Editor
 --   2. Paste the ENTIRE file
@@ -42,7 +46,10 @@ create table if not exists public.events (
   start_time timestamptz,
   end_time timestamptz,
   created_by uuid references auth.users (id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- A scan counts as LATE once it lands more than this many minutes after
+  -- start_time. 0 means "late from the very first second of the event".
+  late_after_minutes integer not null default 10
 );
 
 -- ATTENDANCE
@@ -51,13 +58,34 @@ create table if not exists public.attendance (
   student_id uuid not null references auth.users (id) on delete cascade,
   event_id uuid not null references public.events (id) on delete cascade,
   scanned_at timestamptz not null default now(),
+  -- Derived by the on_attendance_insert trigger below, never by the client.
+  -- 'absent' is intentionally NOT storable: absence is the absence of a row,
+  -- computed by joining event_roster against this table.
+  status text not null default 'present' check (status in ('present', 'late')),
   unique (student_id, event_id)
+);
+
+-- EVENT ROSTER
+-- The students a teacher expects to see for an event. Any roster row with no
+-- matching attendance row is what the app renders as ABSENT, which is what
+-- makes the Present / Late / Absent trio real rather than cosmetic.
+create table if not exists public.event_roster (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events (id) on delete cascade,
+  -- Resolved from the teacher roster when the name matches a known profile.
+  -- Null for names that do not match an account yet; those still count as
+  -- expected attendees and can be matched later by name.
+  student_id uuid references auth.users (id) on delete cascade,
+  student_name text not null,
+  created_at timestamptz not null default now(),
+  unique (event_id, student_name)
 );
 
 -- Enable Row Level Security on all tables
 alter table public.profiles enable row level security;
 alter table public.events enable row level security;
 alter table public.attendance enable row level security;
+alter table public.event_roster enable row level security;
 
 -- ------------------------------------------------------------
 -- 2. AUTOMATIC PROFILE CREATION
@@ -80,6 +108,76 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- ------------------------------------------------------------
+-- 2B. ATTENDANCE STATE (present / late / absent)
+-- ------------------------------------------------------------
+-- The three attendance states are derived, never hand-written:
+--
+--   present  scanned_at <= start_time + late_after_minutes
+--   late     scanned_at  > start_time + late_after_minutes
+--   absent   a row in event_roster with no matching attendance row
+--
+-- present/late are resolved by a trigger so the database stays the single
+-- source of truth — a client that lies about `status` still gets the right
+-- value. absent is never stored, because an absent student has no row at all.
+--
+-- These ALTERs bring an existing database up to date; they are no-ops on a
+-- fresh install because the columns above are already part of CREATE TABLE.
+
+alter table public.events
+  add column if not exists late_after_minutes integer not null default 10;
+
+alter table public.attendance
+  add column if not exists status text not null default 'present';
+
+alter table public.attendance
+  drop constraint if exists attendance_status_check;
+alter table public.attendance
+  add constraint attendance_status_check check (status in ('present', 'late'));
+
+create or replace function public.resolve_attendance_status()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  event_start timestamptz;
+  grace_minutes integer;
+begin
+  select e.start_time, coalesce(e.late_after_minutes, 10)
+    into event_start, grace_minutes
+    from public.events e
+   where e.id = new.event_id;
+
+  -- No start time to compare against, so the scan is simply on time.
+  if event_start is null
+     or new.scanned_at <= event_start + make_interval(mins => grace_minutes) then
+    new.status := 'present';
+  else
+    new.status := 'late';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_attendance_insert on public.attendance;
+create trigger on_attendance_insert
+  before insert on public.attendance
+  for each row execute procedure public.resolve_attendance_status();
+
+-- Backfill rows that predate the trigger. Re-running is safe: it recomputes
+-- the same value every time.
+update public.attendance a
+   set status = case
+     when e.start_time is null
+       or a.scanned_at <= e.start_time + make_interval(mins => coalesce(e.late_after_minutes, 10))
+       then 'present'
+     else 'late'
+   end
+  from public.events e
+ where e.id = a.event_id;
 
 -- ------------------------------------------------------------
 -- 3. POLICIES
@@ -167,6 +265,98 @@ create policy "Teachers can view profiles of their attendees"
       from public.attendance a
       join public.events e on e.id = a.event_id
       where a.student_id = profiles.id
+        and exists (
+          select 1 from public.events own
+          where own.event_code = e.event_code
+            and own.created_by = auth.uid()
+        )
+    )
+    or exists (
+      -- A student on a roster the teacher built for one of their own events,
+      -- so their name can be resolved to an id when the roster is saved.
+      select 1
+      from public.event_roster r
+      join public.events e on e.id = r.event_id
+      where r.student_id = profiles.id
+        and exists (
+          select 1 from public.events own
+          where own.event_code = e.event_code
+            and own.created_by = auth.uid()
+        )
+    )
+  );
+
+-- Event roster policies
+-- Only the teacher who owns the event may write its roster. Lookups go through
+-- event_code so orphan event rows auto-created by an early scan are covered.
+drop policy if exists "Teachers can view the roster for their events" on public.event_roster;
+create policy "Teachers can view the roster for their events"
+  on public.event_roster for select
+  using (
+    exists (
+      select 1 from public.events e
+      where e.id = event_roster.event_id
+        and exists (
+          select 1 from public.events own
+          where own.event_code = e.event_code
+            and own.created_by = auth.uid()
+        )
+    )
+  );
+
+drop policy if exists "Students can view their own roster entry" on public.event_roster;
+create policy "Students can view their own roster entry"
+  on public.event_roster for select
+  using (auth.uid() = student_id);
+
+drop policy if exists "Teachers can insert roster entries for their events" on public.event_roster;
+create policy "Teachers can insert roster entries for their events"
+  on public.event_roster for insert
+  with check (
+    exists (
+      select 1 from public.events e
+      where e.id = event_roster.event_id
+        and exists (
+          select 1 from public.events own
+          where own.event_code = e.event_code
+            and own.created_by = auth.uid()
+        )
+    )
+  );
+
+drop policy if exists "Teachers can update roster entries for their events" on public.event_roster;
+create policy "Teachers can update roster entries for their events"
+  on public.event_roster for update
+  using (
+    exists (
+      select 1 from public.events e
+      where e.id = event_roster.event_id
+        and exists (
+          select 1 from public.events own
+          where own.event_code = e.event_code
+            and own.created_by = auth.uid()
+        )
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.events e
+      where e.id = event_roster.event_id
+        and exists (
+          select 1 from public.events own
+          where own.event_code = e.event_code
+            and own.created_by = auth.uid()
+        )
+    )
+  );
+
+drop policy if exists "Teachers can delete roster entries for their events" on public.event_roster;
+create policy "Teachers can delete roster entries for their events"
+  on public.event_roster for delete
+  using (
+    exists (
+      select 1 from public.events e
+      where e.id = event_roster.event_id
         and exists (
           select 1 from public.events own
           where own.event_code = e.event_code

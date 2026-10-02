@@ -12,7 +12,7 @@ export default function NotFoundScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
         <View style={styles.content}>
           <View style={styles.iconCircle}>
-            <Ionicons name="map-outline" size={42} color={COLORS.mint} />
+            <Ionicons name="map-outline" size={42} color={COLORS.primaryLight} />
           </View>
           <Text style={styles.title}>Page not found</Text>
           <Link href="/" asChild>

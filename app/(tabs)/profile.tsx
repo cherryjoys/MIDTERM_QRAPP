@@ -17,7 +17,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
+import IconTile from '@/components/IconTile';
 import { COLORS } from '@/constants/colors';
+import { APP_ICONS } from '@/constants/icons';
 import { signOut, useAuth } from '@/lib/auth';
 import { getProfile, updateProfile, type Profile } from '@/lib/profiles';
 
@@ -182,6 +184,7 @@ export default function ProfileScreen() {
                   onPress={() => void loadProfile()}
                   style={styles.retryButton}
                 >
+                  <Ionicons name={APP_ICONS.retry} size={15} color={COLORS.danger} />
                   <Text style={styles.retryText}>Retry</Text>
                 </Pressable>
               </View>
@@ -193,9 +196,11 @@ export default function ProfileScreen() {
 
             <View style={styles.detailsCard}>
               <View style={styles.detailRow}>
-                <View style={styles.detailIcon}>
-                  <Ionicons name="person-outline" size={19} color={COLORS.primary} />
-                </View>
+                <IconTile
+                  name={APP_ICONS.user}
+                  size={38}
+                  style={styles.detailIcon}
+                />
                 <View style={styles.detailCopy}>
                   <Text style={styles.detailLabel}>Full name</Text>
                   <Text style={styles.detailValue}>{profile?.full_name || 'Not added yet'}</Text>
@@ -211,9 +216,26 @@ export default function ProfileScreen() {
                     }}
                     style={styles.editButton}
                   >
-                    <Ionicons name="create-outline" size={18} color={COLORS.primary} />
+                    <Ionicons name={APP_ICONS.edit} size={18} color={COLORS.primary} />
                   </Pressable>
                 ) : null}
+              </View>
+
+              <View style={styles.rowSeparator} />
+
+              <View style={styles.detailRow}>
+                <IconTile
+                  name={APP_ICONS.mail}
+                  size={38}
+                  tone="neutral"
+                  style={styles.detailIcon}
+                />
+                <View style={styles.detailCopy}>
+                  <Text style={styles.detailLabel}>Email address</Text>
+                  <Text style={styles.detailValue} numberOfLines={1}>
+                    {user?.email ?? 'Unavailable'}
+                  </Text>
+                </View>
               </View>
 
               {editing ? (
@@ -234,7 +256,7 @@ export default function ProfileScreen() {
                       compact
                       variant="primary"
                       title="Save name"
-                      icon="checkmark-outline"
+                      icon={APP_ICONS.save}
                       onPress={handleSaveName}
                       loading={saving}
                       disabled={saving}
@@ -251,6 +273,7 @@ export default function ProfileScreen() {
                       }}
                       style={styles.cancelButton}
                     >
+                      <Ionicons name={APP_ICONS.close} size={17} color={COLORS.textSecondary} />
                       <Text style={styles.cancelText}>Cancel</Text>
                     </Pressable>
                   </View>
@@ -345,11 +368,11 @@ const styles = StyleSheet.create({
   },
   profileEmail: {
     fontSize: 13,
-    color: COLORS.mint,
+    color: COLORS.primaryLight,
     marginBottom: 11,
   },
   roleBadge: {
-    backgroundColor: COLORS.mint,
+    backgroundColor: COLORS.primaryLight,
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
@@ -380,14 +403,16 @@ const styles = StyleSheet.create({
     marginLeft: 9,
   },
   retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     minHeight: 44,
-    justifyContent: 'center',
     paddingHorizontal: 8,
   },
   retryText: {
     fontSize: 13,
     fontWeight: '800',
     color: COLORS.danger,
+    marginLeft: 5,
   },
   sectionHeader: {
     marginTop: 28,
@@ -415,13 +440,12 @@ const styles = StyleSheet.create({
     minHeight: 67,
   },
   detailIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginRight: 12,
+  },
+  rowSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.border,
+    marginLeft: 50,
   },
   detailCopy: {
     flex: 1,
@@ -472,8 +496,9 @@ const styles = StyleSheet.create({
     marginTop: 11,
   },
   cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     minHeight: 44,
-    justifyContent: 'center',
     paddingHorizontal: 14,
     marginLeft: 8,
   },
@@ -481,6 +506,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: COLORS.textSecondary,
+    marginLeft: 6,
   },
   accountSection: {
     marginTop: 28,

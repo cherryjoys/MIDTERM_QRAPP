@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { COLORS } from '@/constants/colors';
+import { APP_ICONS } from '@/constants/icons';
 import { AuthProvider, useAuth } from '@/lib/auth';
 
 function RootNavigator() {
@@ -15,7 +16,7 @@ function RootNavigator() {
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.loadingMark}>
-          <Ionicons name="qr-code" size={36} color={COLORS.mint} />
+          <Ionicons name={APP_ICONS.qr} size={36} color={COLORS.primaryLight} />
         </View>
         <Text style={styles.loadingTitle}>QR Attendance</Text>
         <ActivityIndicator size="small" color={COLORS.primary} style={styles.loader} />

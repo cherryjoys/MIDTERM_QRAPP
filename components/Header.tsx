@@ -1,7 +1,8 @@
-import { MaterialIcons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { COLORS } from '@/constants/colors';
+import { APP_ICONS } from '@/constants/icons';
 
 type Props = {
   title: string;
@@ -25,10 +26,10 @@ export default function Header({ title, compact = false, centered = false }: Pro
           centered && styles.centeredLogoCircle,
         ]}
       >
-        <MaterialIcons
-          name="qr-code-scanner"
+        <Ionicons
+          name={APP_ICONS.qr}
           size={compact ? 25 : 32}
-          color={COLORS.mint}
+          color={COLORS.primaryLight}
         />
       </View>
       <View style={[styles.copy, centered && styles.centeredCopy]}>

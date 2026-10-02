@@ -19,8 +19,14 @@ import QRCode from 'react-native-qrcode-svg';
 
 import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
+import IconTile from '@/components/IconTile';
 import { COLORS } from '@/constants/colors';
-import { createEvent } from '@/lib/events';
+import { APP_ICONS } from '@/constants/icons';
+import {
+  DEFAULT_LATE_AFTER_MINUTES,
+  createEvent,
+  normalizeRoster,
+} from '@/lib/events';
 import { buildQRPayload } from '@/lib/qr';
 import { useRole } from '@/lib/useRole';
 
@@ -58,12 +64,16 @@ export default function TeacherScreen() {
   );
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [editingPart, setEditingPart] = useState<'date' | 'time'>('date');
+  const [roster, setRoster] = useState('');
+  const [lateAfter, setLateAfter] = useState(String(DEFAULT_LATE_AFTER_MINUTES));
   const [payload, setPayload] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const isAndroid = Platform.OS === 'android';
+  const rosterNames = normalizeRoster(roster);
+  const lateAfterMinutes = Number.parseInt(lateAfter, 10);
 
   const clearFeedback = () => {
     setErrorMessage(null);
@@ -117,6 +127,10 @@ export default function TeacherScreen() {
       title: title.trim(),
       start: toLocalISO(startDate),
       end: toLocalISO(endDate),
+      lateAfterMinutes: Number.isFinite(lateAfterMinutes)
+        ? lateAfterMinutes
+        : DEFAULT_LATE_AFTER_MINUTES,
+      expectedStudents: rosterNames,
     };
 
     setErrorMessage(null);
@@ -158,7 +172,7 @@ export default function TeacherScreen() {
   if (role !== 'teacher') {
     return (
       <TeacherStatus
-        icon="lock-closed-outline"
+        icon={APP_ICONS.lock}
         title="Teachers only"
       />
     );
@@ -178,43 +192,96 @@ export default function TeacherScreen() {
         >
         <Header title="New event" compact />
 
-        <View style={styles.formCard}>
-          <Text style={styles.label}>Event title</Text>
-          <View style={styles.inputShell}>
-            <Ionicons name="sparkles-outline" size={20} color={COLORS.textSecondary} />
-            <TextInput
-              accessibilityLabel="Event title"
-              style={styles.input}
-              value={title}
-              onChangeText={(value) => {
-                setTitle(value);
-                clearFeedback();
-              }}
-              placeholder="e.g. Founders' Day"
-              placeholderTextColor={COLORS.textSecondary}
-              editable={!creating}
-            />
-          </View>
+          <View style={styles.formCard}>
+            <Text style={styles.label}>Event title</Text>
+            <View style={styles.inputShell}>
+              <Ionicons name={APP_ICONS.sparkle} size={20} color={COLORS.textSecondary} />
+              <TextInput
+                accessibilityLabel="Event title"
+                style={styles.input}
+                value={title}
+                onChangeText={(value) => {
+                  setTitle(value);
+                  clearFeedback();
+                }}
+                placeholder="e.g. Founders' Day"
+                placeholderTextColor={COLORS.textSecondary}
+                editable={!creating}
+              />
+            </View>
 
-          <Text style={[styles.label, styles.spacedLabel]}>Event code</Text>
-          <View style={styles.inputShell}>
-            <Ionicons name="key-outline" size={20} color={COLORS.textSecondary} />
-            <TextInput
-              accessibilityLabel="Event code"
-              style={styles.input}
-              value={eventId}
-              onChangeText={(value) => {
-                setEventId(value);
-                clearFeedback();
-              }}
-              placeholder="e.g. EVT-2026-0002"
-              placeholderTextColor={COLORS.textSecondary}
-              autoCapitalize="characters"
-              editable={!creating}
-            />
-          </View>
+            <Text style={[styles.label, styles.spacedLabel]}>Event code</Text>
+            <View style={styles.inputShell}>
+              <Ionicons name="key-outline" size={20} color={COLORS.textSecondary} />
+              <TextInput
+                accessibilityLabel="Event code"
+                style={styles.input}
+                value={eventId}
+                onChangeText={(value) => {
+                  setEventId(value);
+                  clearFeedback();
+                }}
+                placeholder="e.g. EVT-2026-0002"
+                placeholderTextColor={COLORS.textSecondary}
+                autoCapitalize="characters"
+                editable={!creating}
+              />
+            </View>
 
-          <Text style={[styles.label, styles.spacedLabel]}>Starts</Text>
+            <Text style={[styles.label, styles.spacedLabel]}>Expected students</Text>
+            <View style={[styles.inputShell, styles.rosterShell]}>
+              <Ionicons
+                name={APP_ICONS.roster}
+                size={20}
+                color={COLORS.textSecondary}
+                style={styles.rosterIcon}
+              />
+              <TextInput
+                accessibilityLabel="Expected students"
+                accessibilityHint="Separate names with commas. Anyone on this list who does not scan is marked absent."
+                style={[styles.input, styles.rosterInput]}
+                value={roster}
+                onChangeText={(value) => {
+                  setRoster(value);
+                  clearFeedback();
+                }}
+                placeholder="e.g. Juan Dela Cruz, Maria Santos"
+                placeholderTextColor={COLORS.textSecondary}
+                multiline
+                editable={!creating}
+              />
+            </View>
+            <Text style={styles.fieldHint}>
+              {rosterNames.length === 0
+                ? 'Optional. Anyone listed here who never scans is marked absent.'
+                : `${rosterNames.length} student${
+                    rosterNames.length === 1 ? '' : 's'
+                  } expected`}
+            </Text>
+
+            <Text style={[styles.label, styles.spacedLabel]}>Late after (minutes)</Text>
+            <View style={styles.inputShell}>
+              <Ionicons name={APP_ICONS.timer} size={20} color={COLORS.textSecondary} />
+              <TextInput
+                accessibilityLabel="Minutes after start before a student counts as late"
+                style={styles.input}
+                value={lateAfter}
+                onChangeText={(value) => {
+                  setLateAfter(value.replace(/[^0-9]/g, '').slice(0, 3));
+                  clearFeedback();
+                }}
+                placeholder={String(DEFAULT_LATE_AFTER_MINUTES)}
+                placeholderTextColor={COLORS.textSecondary}
+                keyboardType="number-pad"
+                editable={!creating}
+              />
+            </View>
+            <Text style={styles.fieldHint}>
+              Scans after this many minutes count as late instead of present.
+            </Text>
+
+            <Text style={[styles.label, styles.spacedLabel]}>Starts</Text>
+
           <PickerField
             value={formatDateTime(startDate)}
             onPress={() => openPicker('start')}
@@ -251,7 +318,7 @@ export default function TeacherScreen() {
 
           {successMessage ? (
             <View style={styles.successBanner}>
-              <Ionicons name="checkmark-circle-outline" size={19} color={COLORS.success} />
+              <Ionicons name="checkmark-circle-outline" size={19} color={COLORS.present} />
               <Text style={styles.successText}>{successMessage}</Text>
             </View>
           ) : null}
@@ -259,10 +326,11 @@ export default function TeacherScreen() {
           <AppButton
             theme="primary"
             title="Create event QR"
-            icon="add-circle-outline"
+            icon={APP_ICONS.add}
             onPress={handleCreateEvent}
             loading={creating}
             disabled={creating}
+            style={styles.submitButton}
             accessibilityHint="Save the event and generate its attendance QR code"
           />
         </View>
@@ -281,6 +349,7 @@ export default function TeacherScreen() {
         {payload ? (
           <View style={styles.resultCard}>
             <View style={styles.resultHeader}>
+              <IconTile name={APP_ICONS.qr} size={36} style={styles.resultHeaderIcon} />
               <Text style={styles.resultTitle}>QR ready</Text>
             </View>
             <View style={styles.qrBox}>
@@ -327,7 +396,7 @@ function PickerField({ value, onPress, disabled = false }: PickerFieldProps) {
       ]}
     >
       <Text style={styles.pickerValue}>{value}</Text>
-      <Ionicons name="calendar-outline" size={18} color={COLORS.textSecondary} />
+      <Ionicons name={APP_ICONS.calendar} size={18} color={COLORS.textSecondary} />
     </Pressable>
   );
 }
@@ -388,6 +457,12 @@ const styles = StyleSheet.create({
   spacedLabel: {
     marginTop: 17,
   },
+  fieldHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.textSecondary,
+    marginTop: 7,
+  },
   inputShell: {
     minHeight: 54,
     flexDirection: 'row',
@@ -398,6 +473,20 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     paddingLeft: 15,
     paddingRight: 12,
+  },
+  rosterShell: {
+    minHeight: 96,
+    alignItems: 'flex-start',
+    paddingTop: 15,
+    paddingBottom: 12,
+  },
+  rosterIcon: {
+    marginTop: 2,
+  },
+  rosterInput: {
+    minHeight: 68,
+    textAlignVertical: 'top',
+    paddingTop: 0,
   },
   input: {
     flex: 1,
@@ -480,6 +569,9 @@ const styles = StyleSheet.create({
     color: COLORS.success,
     marginLeft: 9,
   },
+  submitButton: {
+    marginTop: 22,
+  },
   pickerContainer: {
     alignItems: 'center',
     marginTop: 14,
@@ -495,8 +587,10 @@ const styles = StyleSheet.create({
   resultHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  resultHeaderIcon: {
+    marginRight: 11,
   },
   resultTitle: {
     fontSize: 19,
@@ -552,7 +646,7 @@ const styles = StyleSheet.create({
     width: 82,
     height: 82,
     borderRadius: 28,
-    backgroundColor: COLORS.mint,
+    backgroundColor: COLORS.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,

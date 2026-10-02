@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AppButton from '@/components/AppButton';
 import Header from '@/components/Header';
 import { COLORS } from '@/constants/colors';
+import { APP_ICONS } from '@/constants/icons';
 import { signIn } from '@/lib/auth';
 
 export default function LoginScreen() {
@@ -64,7 +65,7 @@ export default function LoginScreen() {
           <View style={styles.formCard}>
             <Text style={styles.label}>Email</Text>
             <View style={styles.inputShell}>
-              <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} />
+              <Ionicons name={APP_ICONS.mail} size={20} color={COLORS.textSecondary} />
               <TextInput
                 accessibilityLabel="Email address"
                 style={styles.input}
@@ -81,7 +82,7 @@ export default function LoginScreen() {
 
             <Text style={[styles.label, styles.passwordLabel]}>Password</Text>
             <View style={styles.inputShell}>
-              <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} />
+              <Ionicons name={APP_ICONS.lock} size={20} color={COLORS.textSecondary} />
               <TextInput
                 accessibilityLabel="Password"
                 style={styles.input}
@@ -122,6 +123,7 @@ export default function LoginScreen() {
               onPress={handleLogin}
               loading={loading}
               disabled={loading}
+              style={styles.submitButton}
               accessibilityHint="Sign in to your QR Attendance account"
             />
           </View>
@@ -129,7 +131,13 @@ export default function LoginScreen() {
           <View style={styles.footer}>
             <Text style={styles.footerText}>Need an account?</Text>
             <Link href="/register" style={styles.link}>
-              Create an account
+              <Ionicons
+                name="arrow-forward"
+                size={14}
+                color={COLORS.primary}
+                style={styles.linkIcon}
+              />
+              <Text style={styles.linkText}>Create an account</Text>
             </Link>
           </View>
         </ScrollView>
@@ -201,6 +209,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  submitButton: {
+    marginTop: 22,
+  },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -228,9 +239,16 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   link: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 5,
+  },
+  linkIcon: {
+    marginRight: 5,
+  },
+  linkText: {
     fontSize: 14,
     fontWeight: '800',
     color: COLORS.primary,
-    marginLeft: 5,
   },
 });
